@@ -465,8 +465,9 @@ function worldLabel(w, short) {
 // close to full-width (~1em), so a Chinese label at the same character-count factor
 // would under-estimate its own width and could overlap whatever sits next to it. Sum
 // per-character instead: CJK codepoints get the wider advance, everything else keeps
-// the original factor.
-const CJK_RE = /[　-〿぀-ヿ㐀-鿿＀-￯]/;
+// the original factor. Range also covers Hangul (Korean) — full-width for the same
+// reason — added when the i18n system grew past English/Chinese.
+const CJK_RE = /[　-〿぀-ヿ㐀-鿿＀-￯ᄀ-ᇿ㄰-㆏ꥠ-꥿가-힣]/;
 function charAdvance(ch, size, narrowFactor) { return CJK_RE.test(ch) ? size * 1.02 : size * narrowFactor; }
 function textW(str, size, narrowFactor) {
   let w = 0;

@@ -188,13 +188,25 @@
     transition: color 0.15s, border-color 0.15s;
   }
   .lang-btn:hover { color: var(--accent); border-color: var(--accent); }
-  html[lang="zh"] .lang-btn { font-family: "PingFang SC", "Microsoft YaHei", var(--mono); }
-  html[lang="zh"] .standfirst, html[lang="zh"] footer p, html[lang="zh"] .blurb {
-    font-family: "PingFang SC", "Microsoft YaHei", var(--mono);
+  /* CJK/Hangul need their own system fonts — the Latin mono/serif stack has no glyphs
+     for them at all. Spanish/French stay on the default Latin stack, no rule needed. */
+  html[lang="zh"] .lang-btn, html[lang="ja"] .lang-btn, html[lang="ko"] .lang-btn {
+    font-family: "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo", "Microsoft YaHei", var(--mono);
+  }
+  html[lang="zh"] .standfirst, html[lang="zh"] footer p, html[lang="zh"] .blurb,
+  html[lang="ja"] .standfirst, html[lang="ja"] footer p, html[lang="ja"] .blurb,
+  html[lang="ko"] .standfirst, html[lang="ko"] footer p, html[lang="ko"] .blurb {
+    font-family: "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo", "Microsoft YaHei", var(--mono);
     line-height: 1.9;
   }
   html[lang="zh"] h1.wordmark, html[lang="zh"] .title h2, html[lang="zh"] footer h3 {
     font-family: "Songti SC", "STSong", var(--display);
+  }
+  html[lang="ja"] h1.wordmark, html[lang="ja"] .title h2, html[lang="ja"] footer h3 {
+    font-family: "Hiragino Mincho ProN", "YuMincho", var(--display);
+  }
+  html[lang="ko"] h1.wordmark, html[lang="ko"] .title h2, html[lang="ko"] footer h3 {
+    font-family: "Apple SD Gothic Neo", "Nanum Myeongjo", var(--display);
   }
   @media (max-width: 620px) {
     .lang-btn { top: 12px; right: 14px; padding: 5px 11px; }
@@ -252,57 +264,139 @@ const GAMES = [
     en: { name:'Afterimage', genre:'action-puzzle',
       blurb:'Every death leaves a ghost of your last run, replaying your exact inputs. The levels are built to be unsolvable alone — you need past-you standing on the pressure plate before present-you can get through the door.' },
     zh: { name:'残影', genre:'动作解谜',
-      blurb:'每次死亡都会留下一个重放你操作的幻影。关卡设计成一个人无法通关——你需要过去的自己站在压力板上,现在的自己才能通过门。' } },
+      blurb:'每次死亡都会留下一个重放你操作的幻影。关卡设计成一个人无法通关——你需要过去的自己站在压力板上,现在的自己才能通过门。' },
+    es: { name:'Imagen Residual', genre:'plataformas de acertijos',
+      blurb:'Cada muerte deja un fantasma de tu última partida, repitiendo tus movimientos exactos. Los niveles están diseñados para ser imposibles en solitario — necesitas que tu yo pasado esté sobre la placa de presión para que tu yo presente pueda cruzar la puerta.' },
+    fr: { name:'Rémanence', genre:'plateforme-énigme',
+      blurb:"Chaque mort laisse un fantôme de votre dernière tentative, qui rejoue vos actions à l'identique. Les niveaux sont conçus pour être insolubles seul — il vous faut votre vous du passé posté sur la plaque de pression pour que votre vous du présent franchisse la porte." },
+    ja: { name:'残像', genre:'アクションパズル',
+      blurb:'死ぬたびに、直前のプレイを正確に再現する幽霊が残る。ステージは一人では絶対に解けないように作られている——過去の自分が圧力プレートの上に立っていて初めて、今の自分は扉を通り抜けられる。' },
+    ko: { name:'잔상', genre:'액션 퍼즐',
+      blurb:'죽을 때마다 직전 플레이를 그대로 재현하는 유령이 남는다. 스테이지는 혼자서는 절대 풀 수 없도록 설계되어 있다——과거의 내가 압력판 위에 서 있어야만, 지금의 내가 문을 통과할 수 있다.' } },
   { slug:'orbital', span:'s5', size:'t-xl', flag:true,
     en: { name:'Orbital', genre:'physics golf',
       blurb:'Golf, but the only force acting on the ball is gravity from the planets in the way. Pull back, let go, and hope the slingshot you half-planned actually comes off.' },
     zh: { name:'轨道', genre:'物理高尔夫',
-      blurb:'高尔夫,但唯一作用在球上的力是沿途行星的引力。拉弓、放手,祈祷你半计划的引力弹弓能够成功。' } },
+      blurb:'高尔夫,但唯一作用在球上的力是沿途行星的引力。拉弓、放手,祈祷你半计划的引力弹弓能够成功。' },
+    es: { name:'Orbital', genre:'golf con física',
+      blurb:'Golf, pero la única fuerza que actúa sobre la bola es la gravedad de los planetas que se interponen. Tira hacia atrás, suelta, y espera que la asistencia gravitatoria que planeaste a medias realmente funcione.' },
+    fr: { name:'Orbital', genre:'golf physique',
+      blurb:"Du golf, mais la seule force agissant sur la balle est la gravité des planètes sur le chemin. Tirez en arrière, lâchez, et espérez que l'assistance gravitationnelle à moitié planifiée fonctionne vraiment." },
+    ja: { name:'オービタル', genre:'物理ゴルフ',
+      blurb:'ゴルフ、ただしボールに働く力は道中の惑星の重力だけ。引いて、放して、半分だけ計画したスイングバイが本当に決まることを祈る。' },
+    ko: { name:'궤도', genre:'물리 골프',
+      blurb:'골프이지만, 공에 작용하는 유일한 힘은 지나는 길목 행성들의 중력뿐이다. 뒤로 당기고, 놓고, 어설프게 계획한 중력 새총이 정말로 성공하기를 빈다.' } },
   { slug:'swarm', span:'s5', size:'t-lg', flag:true,
     en: { name:'Swarm', genre:'roguelite',
       blurb:'Ten minutes against a rising tide. You only move — the weapons fire themselves. Draft upgrades, find the pairs that evolve, survive the boss.' },
     zh: { name:'虫潮', genre:'肉鸽',
-      blurb:'十分钟对抗不断上涨的潮水。你只需移动——武器会自动开火。选择升级,找到能进化的组合,活到打败首领。' } },
+      blurb:'十分钟对抗不断上涨的潮水。你只需移动——武器会自动开火。选择升级,找到能进化的组合,活到打败首领。' },
+    es: { name:'Enjambre', genre:'roguelite',
+      blurb:'Diez minutos contra una marea creciente. Solo te mueves — las armas disparan solas. Elige mejoras, encuentra las combinaciones que evolucionan, sobrevive al jefe final.' },
+    fr: { name:'Essaim', genre:'roguelite',
+      blurb:"Dix minutes contre une marée montante. Vous ne faites que bouger — les armes tirent toutes seules. Choisissez des améliorations, trouvez les combinaisons qui évoluent, survivez au boss." },
+    ja: { name:'スウォーム', genre:'ローグライト',
+      blurb:'押し寄せる敵の波に耐える10分間。あなたはただ動くだけ——武器は自動で発射される。アップグレードを選び、進化する組み合わせを見つけ、ボスを生き延びろ。' },
+    ko: { name:'스웜', genre:'로그라이트',
+      blurb:'밀려오는 파도에 맞서는 10분. 당신은 움직이기만 하면 된다——무기는 알아서 발사된다. 업그레이드를 고르고, 진화하는 조합을 찾아, 보스전까지 살아남아라.' } },
   { slug:'petri', span:'s4', size:'t-lg',
     en: { name:'Petri', genre:'strategy',
       blurb:'A war fought entirely with Conway patterns. You never command a unit; you plant a glider and it goes hunting on its own.' },
     zh: { name:'培养皿', genre:'策略',
-      blurb:'一场完全用康威生命游戏图案打的战争。你从不直接指挥任何单位;种下一个滑翔机,它就会自己出发猎杀。' } },
+      blurb:'一场完全用康威生命游戏图案打的战争。你从不直接指挥任何单位;种下一个滑翔机,它就会自己出发猎杀。' },
+    es: { name:'Petri', genre:'estrategia',
+      blurb:'Una guerra librada enteramente con patrones de Conway. Nunca das órdenes a una unidad; plantas un planeador y sale a cazar por su cuenta.' },
+    fr: { name:'Petri', genre:'stratégie',
+      blurb:"Une guerre menée entièrement avec des motifs de Conway. Vous ne commandez jamais une unité ; vous plantez un planeur et il part chasser tout seul." },
+    ja: { name:'ペトリ', genre:'ストラテジー',
+      blurb:'コンウェイのライフゲームのパターンだけで戦う戦争。ユニットを直接操作することはない——グライダーを植えれば、あとは勝手に狩りに出かける。' },
+    ko: { name:'페트리', genre:'전략',
+      blurb:'콘웨이 생명 게임 패턴만으로 치르는 전쟁. 유닛을 직접 지휘하는 일은 없다——글라이더를 심으면 알아서 사냥을 떠난다.' } },
   { slug:'blindsight', span:'s3', size:'t-lg',
     en: { name:'Blindsight', genre:'stealth',
       blurb:'The screen is black. Ping to see the walls — but whatever is down here hears every ping you send.' },
     zh: { name:'盲视', genre:'潜行',
-      blurb:'屏幕一片漆黑。发出回声去看清墙壁——但潜伏在此的东西,能听见你发出的每一次回声。' } },
+      blurb:'屏幕一片漆黑。发出回声去看清墙壁——但潜伏在此的东西,能听见你发出的每一次回声。' },
+    es: { name:'Visión Ciega', genre:'sigilo',
+      blurb:'La pantalla está en negro. Emite un pulso para ver las paredes — pero lo que acecha aquí abajo oye cada pulso que envías.' },
+    fr: { name:'Vision Aveugle', genre:'infiltration',
+      blurb:"L'écran est noir. Émettez un écho pour voir les murs — mais ce qui rôde ici entend chaque écho que vous envoyez." },
+    ja: { name:'ブラインドサイト', genre:'ステルス',
+      blurb:'画面は真っ暗。ピングを発すれば壁が見える——だが、ここに潜む何かは、あなたが発するピングをすべて聞いている。' },
+    ko: { name:'블라인드사이트', genre:'스텔스',
+      blurb:'화면은 칠흑같이 어둡다. 핑을 보내면 벽이 보인다——하지만 이곳에 도사린 무언가는 당신이 보내는 모든 핑 소리를 듣는다.' } },
   { slug:'lexicon', span:'s4', size:'t-md',
     en: { name:'Lexicon', genre:'word game',
       blurb:'Letters fall and pile up with real physics. Trace a word through the heap and watch the collapse take three more with it.' },
     zh: { name:'词汇', genre:'文字游戏',
-      blurb:'字母带着真实物理效果落下堆积。在堆里描出一个单词,看着崩塌顺带消掉另外三个。' } },
+      blurb:'字母带着真实物理效果落下堆积。在堆里描出一个单词,看着崩塌顺带消掉另外三个。' },
+    es: { name:'Léxico', genre:'juego de palabras',
+      blurb:'Las letras caen y se amontonan con física real. Traza una palabra en el montón y observa cómo el derrumbe se lleva tres más con ella.' },
+    fr: { name:'Lexique', genre:'jeu de mots',
+      blurb:"Les lettres tombent et s'entassent avec une vraie physique. Tracez un mot dans le tas et regardez l'effondrement en emporter trois autres avec lui." },
+    ja: { name:'レキシコン', genre:'ワードゲーム',
+      blurb:'文字が本物の物理演算で落下し積み重なる。山の中で単語をなぞれば、崩壊がついでにもう3つ巻き込んでいく。' },
+    ko: { name:'렉시콘', genre:'단어 게임',
+      blurb:'글자가 진짜 물리 법칙에 따라 떨어져 쌓인다. 더미 속에서 단어를 그으면, 무너지면서 세 개를 더 함께 쓸어간다.' } },
   { slug:'pulse', span:'s3', size:'t-md',
     en: { name:'Pulse', genre:'rhythm',
       blurb:'One button. The track is synthesized from a seed and the obstacles are generated from that same track, so they cannot drift apart.' },
     zh: { name:'脉冲', genre:'节奏',
-      blurb:'只有一个按键。乐曲由种子实时合成,障碍物又由同一首曲子生成,因此两者永远不会失去同步。' } },
+      blurb:'只有一个按键。乐曲由种子实时合成,障碍物又由同一首曲子生成,因此两者永远不会失去同步。' },
+    es: { name:'Pulso', genre:'ritmo',
+      blurb:'Un solo botón. La pista se sintetiza a partir de una semilla y los obstáculos se generan a partir de esa misma pista, así que nunca pueden desincronizarse.' },
+    fr: { name:'Pulse', genre:'rythme',
+      blurb:"Un seul bouton. Le morceau est synthétisé à partir d'une graine et les obstacles sont générés à partir de ce même morceau, si bien qu'ils ne peuvent jamais se désynchroniser." },
+    ja: { name:'パルス', genre:'リズム',
+      blurb:'ボタンは1つだけ。楽曲はシードから合成され、障害物はその同じ楽曲から生成される——だから両者は決してズレない。' },
+    ko: { name:'펄스', genre:'리듬',
+      blurb:'버튼은 단 하나. 트랙은 시드로부터 합성되고, 장애물은 바로 그 트랙에서 생성되므로 절대 어긋날 수 없다.' } },
   { slug:'the-nine', span:'s5', size:'t-md',
     en: { name:'The Nine', genre:'deduction',
       blurb:'Nine strangers, contradictory testimony, exactly one consistent answer. Guesses only lock in when three of them are right at once.' },
     zh: { name:'九人', genre:'推理',
-      blurb:'九个陌生人,互相矛盾的证词,唯一自洽的答案。只有同时猜对三项,才会被永久锁定。' } },
+      blurb:'九个陌生人,互相矛盾的证词,唯一自洽的答案。只有同时猜对三项,才会被永久锁定。' },
+    es: { name:'Los Nueve', genre:'deducción',
+      blurb:'Nueve desconocidos, testimonios contradictorios, exactamente una respuesta coherente. Las suposiciones solo se fijan cuando tres de ellas son correctas a la vez.' },
+    fr: { name:'Les Neuf', genre:'déduction',
+      blurb:"Neuf inconnus, des témoignages contradictoires, une seule réponse cohérente possible. Les hypothèses ne se verrouillent que lorsque trois d'entre elles sont justes en même temps." },
+    ja: { name:'九人', genre:'推理',
+      blurb:'見知らぬ九人、食い違う証言、成立する答えはただ一つ。同時に三つ正解しない限り、推測は確定しない。' },
+    ko: { name:'아홉 명', genre:'추리',
+      blurb:'낯선 아홉 명, 서로 엇갈리는 증언, 성립하는 답은 단 하나. 세 가지를 동시에 맞혀야만 추측이 확정된다.' } },
   { slug:'scribble', span:'s5', size:'t-lg',
     en: { name:'Scribble', genre:'sandbox physics',
       blurb:'Draw anything and it becomes a real object with real weight. Ramps, pendulums, catapults — solve it however you like, on a fixed ink budget.' },
     zh: { name:'涂鸦', genre:'沙盒物理',
-      blurb:'画出任何东西,它都会成为有真实重量的实体。斜坡、摆锤、投石机——在固定的墨水额度内,随你怎么解题。' } },
+      blurb:'画出任何东西,它都会成为有真实重量的实体。斜坡、摆锤、投石机——在固定的墨水额度内,随你怎么解题。' },
+    es: { name:'Garabato', genre:'física sandbox',
+      blurb:'Dibuja lo que sea y se convierte en un objeto real con peso real. Rampas, péndulos, catapultas — resuélvelo como quieras, con un presupuesto de tinta fijo.' },
+    fr: { name:'Griffonnage', genre:'physique bac à sable',
+      blurb:"Dessinez n'importe quoi et ça devient un objet réel avec un vrai poids. Rampes, pendules, catapultes — résolvez comme vous voulez, avec un budget d'encre fixe." },
+    ja: { name:'スクリブル', genre:'サンドボックス物理',
+      blurb:'何でも描けば、それは本物の重さを持つ実体になる。坂道、振り子、投石機——決まったインク量の中で、好きなように解け。' },
+    ko: { name:'스크리블', genre:'샌드박스 물리',
+      blurb:'무엇이든 그리면 진짜 무게를 가진 실체가 된다. 경사로, 진자, 투석기——정해진 잉크 양 안에서 원하는 대로 풀어라.' } },
   { slug:'mirrorbind', span:'s7', size:'t-lg',
     en: { name:'Mirrorbind', genre:'coordination',
       blurb:'One set of keys drives two of you at once, in mirrored worlds that read your left as their right. Both of you have to get home, and only one of you is going the way you meant.' },
     zh: { name:'镜绑', genre:'协调操作',
-      blurb:'同一组按键同时操纵两个你,身处互为镜像的世界——你的左边是另一个世界的右边。两个你都必须回家,而其中一个走的方向永远不是你想的那个。' } },
+      blurb:'同一组按键同时操纵两个你,身处互为镜像的世界——你的左边是另一个世界的右边。两个你都必须回家,而其中一个走的方向永远不是你想的那个。' },
+    es: { name:'Ligados en Espejo', genre:'coordinación',
+      blurb:'Un solo juego de teclas mueve a dos de ti a la vez, en mundos espejados donde tu izquierda es su derecha. Los dos tienen que llegar a casa, y solo uno va en la dirección que pretendías.' },
+    fr: { name:'Miroir Lié', genre:'coordination',
+      blurb:"Un seul jeu de touches contrôle deux versions de vous à la fois, dans des mondes en miroir où votre gauche est leur droite. Vous devez tous les deux rentrer, et un seul des deux part dans la direction que vous vouliez." },
+    ja: { name:'ミラーバインド', genre:'協調操作',
+      blurb:'一組のキーが、二人の自分を同時に動かす。左右が反転した鏡の世界で。両方とも家にたどり着かなければならないが、思った通りの方向に進むのはどちらか一方だけ。' },
+    ko: { name:'미러바인드', genre:'협응 조작',
+      blurb:'한 세트의 키가 두 명의 나를 동시에 움직인다. 좌우가 뒤집힌 거울 세계에서. 둘 다 집에 도착해야 하지만, 의도한 방향으로 가는 건 그중 하나뿐이다.' } },
 ];
+
+const LANGS = ['en', 'zh', 'es', 'fr', 'ja', 'ko'];
+const LANG_NAMES = { en: 'EN', zh: '中文', es: 'ES', fr: 'FR', ja: '日本語', ko: '한국어' };
 
 const I18N = {
   en: {
-    langBtnLabel: '中文',
     wordmark: 'Games<span class="x">&times;</span>10',
     standfirst: `Ten games across ten genres, built to run anywhere a browser does. There is
       <strong>no build step and nothing to install</strong> — no framework, no CDN, and not one
@@ -323,7 +417,6 @@ const I18N = {
     desc: 'Ten browser games across ten genres. No dependencies, no build step, no asset files — every pixel is drawn to a canvas and every sound synthesized at runtime.',
   },
   zh: {
-    langBtnLabel: 'EN',
     wordmark: '游戏<span class="x">&times;</span>10',
     standfirst: `十款游戏,十种类型,在任何浏览器里都能直接运行。
       <strong>没有构建步骤,不需要安装任何东西</strong>——没有框架、没有 CDN,没有一张
@@ -340,6 +433,84 @@ const I18N = {
     ],
     title: '游戏×10 — 十款浏览器游戏,零依赖',
     desc: '十款浏览器游戏,十种类型。没有依赖、没有构建步骤、没有素材文件——每一个像素都实时绘制,每一段声音都在运行时合成。',
+  },
+  es: {
+    wordmark: 'Juegos<span class="x">&times;</span>10',
+    standfirst: `Diez juegos en diez géneros distintos, hechos para funcionar en cualquier navegador.
+      <strong>No hay que compilar nada ni instalar nada</strong> — sin framework, sin CDN, y ni una sola
+      imagen, audio o fuente. Cada píxel se dibuja en un lienzo y cada sonido se sintetiza en el
+      instante en que lo escuchas. Cada juego además trae su propia <em>autoprueba</em> que juega
+      por sí sola y demuestra que sigue funcionando.`,
+    plate: [['Juegos','10'],['Géneros','10'],['Dependencias','0'],['Archivos de recursos','0'],['Pasos de compilación','0']],
+    flagmark: 'insignia',
+    footer: [
+      ['Cómo leerlo', `Cada juego es una carpeta de módulos ES puros sobre <code>shared/kit.js</code>. La
+        simulación es una función pura del estado, la entrada y un paso de tiempo fijo, así que el
+        juego, su autoprueba y su resolutor de niveles ejecutan exactamente el mismo código.`],
+      ['Cómo comprobarlo', `<code>node tools/verify.mjs</code> ejecuta la verificación estática. <code>tools/testbed.html</code>
+        ejecuta la autoprueba de cada juego en secuencia. O abre cualquier juego y llama a
+        <code>await window.__selftest()</code> en la consola para verlo probarse a sí mismo.`],
+    ],
+    title: 'Juegos×10 — diez juegos de navegador, cero dependencias',
+    desc: 'Diez juegos de navegador en diez géneros. Sin dependencias, sin compilación, sin archivos de recursos — cada píxel se dibuja y cada sonido se sintetiza en tiempo real.',
+  },
+  fr: {
+    wordmark: 'Jeux<span class="x">&times;</span>10',
+    standfirst: `Dix jeux dans dix genres différents, conçus pour fonctionner dans n'importe quel navigateur.
+      <strong>Aucune étape de compilation, rien à installer</strong> — pas de framework, pas de CDN, et
+      pas une seule image, un seul son ou une seule police. Chaque pixel est dessiné sur un canevas
+      et chaque son est synthétisé au moment même où vous l'entendez. Chaque jeu embarque aussi un
+      <em>auto-test</em> qui se joue tout seul pour prouver qu'il fonctionne encore.`,
+    plate: [['Jeux','10'],['Genres','10'],['Dépendances','0'],['Fichiers de ressources','0'],['Étapes de build','0']],
+    flagmark: 'phare',
+    footer: [
+      ['Comment le lire', `Chaque jeu est un dossier de modules ES pur au-dessus de <code>shared/kit.js</code>. La
+        simulation est une fonction pure de l'état, de l'entrée et d'un pas de temps fixe, si bien que
+        le jeu, son auto-test et son solveur de niveaux exécutent exactement le même code.`],
+      ['Comment le vérifier', `<code>node tools/verify.mjs</code> exécute la vérification statique. <code>tools/testbed.html</code>
+        lance l'auto-test de chaque jeu à la suite. Ou ouvrez n'importe quel jeu et appelez
+        <code>await window.__selftest()</code> dans la console pour le voir se tester lui-même.`],
+    ],
+    title: 'Jeux×10 — dix jeux de navigateur, zéro dépendance',
+    desc: "Dix jeux de navigateur dans dix genres. Aucune dépendance, aucune étape de build, aucun fichier de ressources — chaque pixel est dessiné et chaque son synthétisé en temps réel.",
+  },
+  ja: {
+    wordmark: 'ゲーム<span class="x">&times;</span>10',
+    standfirst: `10種のジャンルにまたがる10本のゲーム。どのブラウザでもそのまま動きます。
+      <strong>ビルド不要、インストール不要</strong>——フレームワークもCDNも使わず、画像・音声・フォント
+      ファイルは一つもありません。すべてのピクセルはキャンバスにその場で描画され、すべての音は聞こえる
+      瞬間に合成されます。各ゲームには<em>セルフテスト</em>が付属し、自分でプレイして正常動作を証明します。`,
+    plate: [['ゲーム数','10'],['ジャンル数','10'],['依存関係','0'],['アセットファイル','0'],['ビルド手順','0']],
+    flagmark: '看板作品',
+    footer: [
+      ['読み方', `各ゲームは <code>shared/kit.js</code> の上に構築された、純粋な ES モジュール群のフォルダです。
+        シミュレーションは状態・入力・固定タイムステップの純粋関数なので、ゲーム本体・セルフテスト・
+        レベルソルバーはすべて全く同じコードを実行します。`],
+      ['検証方法', `<code>node tools/verify.mjs</code> で静的検証を実行できます。<code>tools/testbed.html</code>
+        は各ゲームのセルフテストを順に実行します。あるいは任意のゲームを開き、コンソールで
+        <code>await window.__selftest()</code> を呼び出せば、自分自身をテストする様子を見られます。`],
+    ],
+    title: 'ゲーム×10 — 依存関係ゼロの、10本のブラウザゲーム',
+    desc: '10種のジャンルにまたがる10本のブラウザゲーム。依存関係もビルド手順もアセットファイルもなし——すべてのピクセルを描画し、すべての音をリアルタイムで合成します。',
+  },
+  ko: {
+    wordmark: '게임<span class="x">&times;</span>10',
+    standfirst: `열 가지 장르에 걸친 열 개의 게임. 어떤 브라우저에서도 바로 실행됩니다.
+      <strong>빌드 과정도, 설치할 것도 없습니다</strong>——프레임워크도 CDN도 없고, 이미지·오디오·폰트
+      파일이 단 하나도 없습니다. 모든 픽셀은 캔버스에 실시간으로 그려지고, 모든 소리는 듣는 순간
+      합성됩니다. 각 게임에는 스스로 플레이하며 정상 작동을 증명하는 <em>자가 테스트</em>도 들어 있습니다.`,
+    plate: [['게임 수','10'],['장르 수','10'],['의존성','0'],['에셋 파일','0'],['빌드 단계','0']],
+    flagmark: '대표작',
+    footer: [
+      ['읽는 법', `모든 게임은 <code>shared/kit.js</code> 위에 놓인 순수 ES 모듈 폴더 하나입니다.
+        시뮬레이션은 상태·입력·고정 타임스텝의 순수 함수이므로, 게임 본체와 자가 테스트,
+        레벨 솔버가 완전히 동일한 코드를 실행합니다.`],
+      ['검증하는 법', `<code>node tools/verify.mjs</code>로 정적 검증을 실행합니다. <code>tools/testbed.html</code>은
+        모든 게임의 자가 테스트를 순서대로 실행합니다. 아니면 아무 게임이나 열어 콘솔에서
+        <code>await window.__selftest()</code>를 호출해 스스로 테스트하는 과정을 직접 확인해보세요.`],
+    ],
+    title: '게임×10 — 의존성 제로, 브라우저 게임 10종',
+    desc: '열 가지 장르에 걸친 브라우저 게임 10종. 의존성도, 빌드 단계도, 에셋 파일도 없습니다——모든 픽셀은 그려지고 모든 소리는 실시간으로 합성됩니다.',
   },
 };
 
@@ -551,19 +722,24 @@ GAMES.forEach((g, i) => {
 });
 
 // --- language toggle. Preference persists per-browser; default follows the OS/browser locale.
+// Shares its localStorage key with shared/kit.js's own toggle (used inside each game), so
+// picking a language on the hub or inside any game keeps the whole arcade in sync.
 const LANG_KEY = 'gx10:lang';
 function detectLang() {
   const saved = localStorage.getItem(LANG_KEY);
-  if (saved === 'en' || saved === 'zh') return saved;
-  return (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  if (LANGS.includes(saved)) return saved;
+  const nav = (navigator.language || '').toLowerCase();
+  for (const l of LANGS) if (nav.startsWith(l)) return l;
+  return 'en';
 }
+function nextLang(lang) { return LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; }
 
 function renderLang(lang) {
   document.documentElement.lang = lang;
   const t = I18N[lang];
   document.title = t.title;
   document.querySelector('meta[name="description"]').setAttribute('content', t.desc);
-  document.getElementById('langBtn').textContent = t.langBtnLabel;
+  document.getElementById('langBtn').textContent = LANG_NAMES[nextLang(lang)];
   document.getElementById('i-wordmark').innerHTML = t.wordmark;
   document.getElementById('i-standfirst').innerHTML = t.standfirst;
 
@@ -594,7 +770,7 @@ function renderLang(lang) {
 const currentLang = { value: detectLang() };
 renderLang(currentLang.value);
 document.getElementById('langBtn').addEventListener('click', () => {
-  currentLang.value = currentLang.value === 'zh' ? 'en' : 'zh';
+  currentLang.value = nextLang(currentLang.value);
   localStorage.setItem(LANG_KEY, currentLang.value);
   renderLang(currentLang.value);
 });

@@ -24,16 +24,33 @@ if (typeof globalThis.addEventListener === 'function' && !globalThis.__errors) {
 // called at DRAW time (every frame), not once at init, so a mid-game toggle repaints
 // immediately with no reload — the canvas is already being redrawn 60 times a second,
 // translation just rides along. DOM chrome (the topbar's <h1>/.tag/.keys, which isn't
-// canvas) is bound separately via [data-en][data-zh] attributes + mountLangToggle().
+// canvas) is bound separately via [data-en] + data-<lang> attributes + mountLangToggle().
+//
+// Started as an EN/ZH-only toggle: every call site across ten games is `T(en, zh)`,
+// two positional strings. Adding four more languages (ES/FR/JA/KO) without touching
+// every one of those hundreds of call sites means the *extra* languages can't be new
+// T() arguments — they're resolved from a registry keyed by the English string instead.
+// `registerTranslations({ 'Score': { es: 'Puntos', ... } })` extends that registry;
+// `T(en, zh)` still means exactly what it always meant, and only reaches into the
+// registry when the active language is neither 'en' nor 'zh'. An unregistered string
+// falls back to English — it never shows Chinese under a Spanish/French/Japanese/
+// Korean selection, since zh is a positional T() argument, not a registry entry.
+
+export const LANGS = ['en', 'zh', 'es', 'fr', 'ja', 'ko'];
+export const LANG_NAMES = { en: 'EN', zh: '中文', es: 'ES', fr: 'FR', ja: '日本語', ko: '한국어' };
+const LANG_DETECT = { zh: 'zh', es: 'es', fr: 'fr', ja: 'ja', ko: 'ko' };
 
 const LANG_KEY = 'gx10:lang';
 const _langListeners = new Set();
+const _dict = new Map(); // English string -> { zh?, es?, fr?, ja?, ko? }
 
 function _detectLang() {
   if (typeof localStorage === 'undefined') return 'en';
   const saved = localStorage.getItem(LANG_KEY);
-  if (saved === 'en' || saved === 'zh') return saved;
-  return (typeof navigator !== 'undefined' && /^zh/i.test(navigator.language || '')) ? 'zh' : 'en';
+  if (LANGS.includes(saved)) return saved;
+  const nav = ((typeof navigator !== 'undefined' && navigator.language) || '').toLowerCase();
+  for (const prefix in LANG_DETECT) if (nav.startsWith(prefix)) return LANG_DETECT[prefix];
+  return 'en';
 }
 
 let _lang = _detectLang();
@@ -41,21 +58,42 @@ let _lang = _detectLang();
 export function currentLang() { return _lang; }
 
 export function setLang(l) {
-  if (l !== 'en' && l !== 'zh') return;
+  if (!LANGS.includes(l)) return;
   _lang = l;
   try { localStorage.setItem(LANG_KEY, l); } catch { /* private mode */ }
   for (const fn of _langListeners) fn(l);
 }
 
+/** The language the toggle button will switch TO on the next click. */
+export function nextLang() { return LANGS[(LANGS.indexOf(_lang) + 1) % LANGS.length]; }
+
 export function onLangChange(fn) { _langListeners.add(fn); return () => _langListeners.delete(fn); }
 
+/**
+ * Extend the ES/FR/JA/KO registry. map: { 'English string': { es, fr, ja, ko, zh? }, ... }.
+ * Safe to call more than once (per-key merge, later calls win on conflicting fields) —
+ * each game registers its own strings once at module load, independent of the others.
+ */
+export function registerTranslations(map) {
+  for (const en in map) {
+    const cur = _dict.get(en) || {};
+    _dict.set(en, Object.assign(cur, map[en]));
+  }
+}
+
 /** Pick a string for the active language. Call inline at draw time: T('Score', '分数'). */
-export function T(en, zh) { return _lang === 'zh' ? zh : en; }
+export function T(en, zh) {
+  if (_lang === 'en') return en;
+  if (_lang === 'zh') return zh !== undefined ? zh : en;
+  const entry = _dict.get(en);
+  return (entry && entry[_lang]) || en;
+}
 
 /**
- * Mounts a 中文/EN toggle button into `.topbar` (idempotent — safe to call every
- * frame or every boot) and binds every [data-en][data-zh] element in the DOM to swap
- * text on change. Games only need to add data-en/data-zh to their static topbar HTML;
+ * Mounts a language-cycle toggle button into `.topbar` (idempotent — safe to call every
+ * frame or every boot) and binds every `[data-en]` element to swap text on change, reading
+ * `data-<lang>` (falling back to `data-en`) for the active language. Games only need
+ * data-en plus whichever data-<lang> attributes they have on their static topbar HTML;
  * this handles the button, the binding, and keeping <html lang> correct.
  */
 export function mountLangToggle() {
@@ -65,19 +103,19 @@ export function mountLangToggle() {
 
   const applyDom = () => {
     document.documentElement.lang = _lang;
-    for (const el of document.querySelectorAll('[data-en][data-zh]')) {
-      el.textContent = _lang === 'zh' ? el.getAttribute('data-zh') : el.getAttribute('data-en');
+    for (const el of document.querySelectorAll('[data-en]')) {
+      el.textContent = el.getAttribute('data-' + _lang) || el.getAttribute('data-en');
     }
     const btn = document.getElementById('gx10LangBtn');
-    if (btn) btn.textContent = _lang === 'zh' ? 'EN' : '中文';
+    if (btn) btn.textContent = LANG_NAMES[nextLang()];
   };
 
   const btn = document.createElement('button');
   btn.id = 'gx10LangBtn';
   btn.type = 'button';
   btn.className = 'lang-btn-inline';
-  btn.setAttribute('aria-label', '切换语言 / switch language');
-  btn.addEventListener('click', () => { setLang(_lang === 'zh' ? 'en' : 'zh'); applyDom(); });
+  btn.setAttribute('aria-label', 'switch language');
+  btn.addEventListener('click', () => { setLang(nextLang()); applyDom(); });
   topbar.appendChild(btn);
 
   applyDom();
