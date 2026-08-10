@@ -55,6 +55,11 @@ a:hover { text-decoration: underline; }
   flex: 0 0 auto;
   min-height: 42px;
   user-select: none;
+  /* The bar is a single fixed-height strip. Without this, the key hints wrap onto
+     three lines on a narrow window and the topbar silently eats the playfield. */
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .topbar .back {
@@ -95,10 +100,22 @@ a:hover { text-decoration: underline; }
   color: var(--ink);
   background: var(--panel);
   border: 1px solid var(--grid);
-  border-radius: 4px;
+  border-radius: 3px;
   padding: 1px 5px;
   font-weight: 600;
   margin: 0 1px;
+}
+
+/* Narrow windows: drop the least important chrome rather than let it wrap.
+   Key hints go first (every game also states its controls on its own title card),
+   then the tagline. The back link and title always survive. */
+@media (max-width: 860px) {
+  .topbar .keys { display: none; }
+}
+@media (max-width: 620px) {
+  .topbar .tag { display: none; }
+  .topbar { gap: 10px; padding: 7px 11px; }
+  .topbar h1 { font-size: 13px; letter-spacing: 0.1em; }
 }
 
 .stage {

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gamesx10 — bug check</title>
+<link rel="stylesheet" href="../shared/arcade.css">
+<style>
+  body { overflow-y: auto; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 30px 20px 70px; }
+  h1 { font-family: var(--display); font-size: 26px; margin: 0 0 6px; font-weight: 600; }
+  .lead { color: var(--dim); font-size: 13px; line-height: 1.7; margin: 0 0 20px; max-width: 76ch; }
+  #stage { position: fixed; left: -9999px; top: 0; width: 900px; height: 600px; }
+  iframe { width: 900px; height: 600px; border: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--dim); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  .ok { color: var(--accent); }
+  .bad { color: var(--hot); }
+  .warn { color: var(--warm); }
+  pre { margin: 3px 0 0; font-size: 11px; color: var(--hot); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bug check</h1>
+  <p class="lead">
+    Adversarial checks that go beyond each game's own self-test: save-state hygiene, extreme
+    canvas sizes, long-run numerical stability, unbounded memory growth, running with no audio
+    context, and determinism. Click run, or call <code>await bugCheck()</code>.
+  </p>
+  <button id="run">Run bug check</button>
+  <div id="out"></div>
+</div>
+<div id="stage"></div>
+
+<script type="module">
+const GAMES = ['afterimage','orbital','swarm','petri','blindsight','lexicon','pulse','the-nine','scribble','mirrorbind'];
+const stage = document.getElementById('stage');
+const out = document.getElementById('out');
+
+function load(slug, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    const frame = document.createElement('iframe');
+    let settled = false;
+    const done = (v) => { if (settled) return; settled = true; resolve({ frame, ...v }); };
+    frame.src = `../games/${slug}/index.html?bugcheck=1`;
+    frame.addEventListener('load', async () => {
+      const w = frame.contentWindow;
+      const deadline = Date.now() + 8000;
+      while (!w.__game && Date.now() < deadline) await new Promise(r => setTimeout(r, 60));
+      done({ w, ok: !!w.__game });
+    });
+    setTimeout(() => done({ w: frame.contentWindow, ok: false, timedOut: true }), timeoutMs);
+    stage.appendChild(frame);
+  });
+}
+
+/** Deep-walk a sim and record array lengths, so we can spot unbounded growth. */
+function arrayLengths(obj, depth = 3, prefix = '', acc = {}, seen = new Set()) {
+  if (!obj || typeof obj !== 'object' || depth < 0 || seen.has(obj)) return acc;
+  seen.add(obj);
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (Array.isArray(v)) acc[prefix + k] = v.length;
+    else if (v && typeof v === 'object') arrayLengths(v, depth - 1, prefix + k + '.', acc, seen);
+  }
+  return acc;
+}
+
+function finiteScan(v, maxDepth = 5, seen = new Set()) {
+  const bad = [];
+  (function walk(x, path, d) {
+    if (d > maxDepth || x == null) return;
+    if (typeof x === 'number') { if (!Number.isFinite(x)) bad.push(path); return; }
+    if (typeof x !== 'object' || seen.has(x)) return;
+    seen.add(x);
+    if (Array.isArray(x)) { for (let i = 0; i < Math.min(x.length, 250); i++) walk(x[i], `${path}[${i}]`, d + 1); }
+    else for (const k of Object.keys(x)) walk(x[k], `${path}.${k}`, d + 1);
+  })(v, '', 0);
+  return bad;
+}
+
+async function checkGame(slug) {
+  const findings = [];
+  const note = (sev, name, detail) => findings.push({ sev, name, detail: String(detail).slice(0, 260) });
+
+  const { frame, w, ok, timedOut } = await load(slug);
+  if (!ok) {
+    note('bad', 'page failed to boot', timedOut ? 'timed out waiting for window.__game' : 'no __game');
+    frame.remove();
+    return findings;
+  }
+
+  try {
+    const g = w.__game;
+
+    // 1. clean load
+    if (w.__errors && w.__errors.length) note('bad', 'errors on load', w.__errors.join(' | '));
+
+    // 2. save-state hygiene: running the self-test must not mutate stored progress
+    const snap = () => { const o = {}; for (let i = 0; i < w.localStorage.length; i++) { const k = w.localStorage.key(i); o[k] = w.localStorage.getItem(k); } return o; };
+    const before = snap();
+    if (typeof w.__selftest === 'function') {
+      const res = await w.__selftest();
+      if (!res.pass) note('bad', 'self-test failed', res.checks.filter(c => !c.pass).map(c => c.name).join('; '));
+    } else {
+      note('bad', 'no __selftest', 'game does not register one');
+    }
+    const after = snap();
+    const changed = Object.keys({ ...before, ...after }).filter(k => before[k] !== after[k]);
+    if (changed.length) note('warn', 'self-test mutates saved progress', changed.join(', '));
+
+    // 3. extreme canvas sizes — games must not assume a comfortable viewport
+    const canvas = g.canvas;
+    const origW = canvas.style.width, origH = canvas.style.height;
+    for (const [cw, ch] of [[240, 160], [2200, 1300], [520, 900]]) {
+      try {
+        canvas.style.width = cw + 'px';
+        canvas.style.height = ch + 'px';
+        w.dispatchEvent(new w.Event('resize'));
+        await new Promise(r => setTimeout(r, 40));
+        g.paused = true;
+        for (let i = 0; i < 45; i++) g.step(1);
+        g.draw();
+        const bad = finiteScan(g.state);
+        if (bad.length) note('bad', `non-finite state at ${cw}x${ch}`, bad.slice(0, 4).join(', '));
+      } catch (e) {
+        note('bad', `threw at canvas ${cw}x${ch}`, e && (e.message || e));
+      }
+    }
+    canvas.style.width = origW; canvas.style.height = origH;
+    w.dispatchEvent(new w.Event('resize'));
+    await new Promise(r => setTimeout(r, 40));
+
+    // 4. long run: numerical stability + unbounded growth
+    try {
+      g.paused = true;
+      g.restart();
+      const sim = g.state.sim || g.state;
+      for (let i = 0; i < 400; i++) g.step(1);
+      const early = arrayLengths(sim);
+      for (let i = 0; i < 2600; i++) g.step(1);
+      const late = arrayLengths(g.state.sim || g.state);
+      const bad = finiteScan(g.state);
+      if (bad.length) note('bad', 'non-finite after 3000 frames', bad.slice(0, 5).join(', '));
+      const grew = Object.keys(late).filter(k => late[k] > 2000 && late[k] > (early[k] ?? 0) * 8);
+      if (grew.length) note('warn', 'array grew unbounded over 3000 frames', grew.map(k => `${k}: ${early[k] ?? 0}->${late[k]}`).join(', '));
+    } catch (e) {
+      note('bad', 'threw during 3000-frame run', e && (e.message || e));
+    }
+
+    // 5. must work with no audio (self-tests never get a user gesture)
+    try {
+      const S = g.sound;
+      const savedCtx = S.ctx;
+      S.ctx = null;
+      g.restart();
+      for (let i = 0; i < 120; i++) g.step(1);
+      g.draw();
+      S.ctx = savedCtx;
+    } catch (e) {
+      note('bad', 'throws when audio context is absent', e && (e.message || e));
+    }
+
+    // 6. determinism: same seed + same scripted input => identical outcome
+    try {
+      const hash = () => JSON.stringify(finiteScan(g.state)).length + '|' +
+        JSON.stringify(arrayLengths(g.state.sim || g.state));
+      g.restart(g.seed); for (let i = 0; i < 200; i++) g.step(1);
+      const a = hash();
+      g.restart(g.seed); for (let i = 0; i < 200; i++) g.step(1);
+      const b = hash();
+      if (a !== b) note('warn', 'run not reproducible from same seed', `${a} vs ${b}`);
+    } catch (e) {
+      note('bad', 'threw during determinism check', e && (e.message || e));
+    }
+
+    // 7. blur must release held keys, or the player returns to a stuck input
+    try {
+      g.input.press('right');
+      w.dispatchEvent(new w.Event('blur'));
+      if (g.input.isDown('right')) note('warn', 'keys stay held after window blur', 'ArrowRight still down');
+      g.input.clear();
+    } catch (e) { note('bad', 'threw during blur check', e && (e.message || e)); }
+
+  } catch (e) {
+    note('bad', 'bug check threw', e && (e.stack || e.message || e));
+  }
+
+  frame.remove();
+  return findings;
+}
+
+async function bugCheck(list = GAMES) {
+  const all = {};
+  for (const slug of list) all[slug] = await checkGame(slug);
+  render(all);
+  globalThis.__bugs = all;
+  const bad = Object.entries(all).filter(([, f]) => f.some(x => x.sev === 'bad'));
+  const warn = Object.entries(all).filter(([, f]) => f.some(x => x.sev === 'warn'));
+  return { clean: Object.keys(all).length - bad.length - warn.length, failing: bad.map(([s]) => s), warning: warn.map(([s]) => s), all };
+}
+
+function render(all) {
+  const rows = Object.entries(all).map(([slug, f]) => {
+    const bad = f.filter(x => x.sev === 'bad'), warn = f.filter(x => x.sev === 'warn');
+    const cls = bad.length ? 'bad' : warn.length ? 'warn' : 'ok';
+    const label = bad.length ? `${bad.length} BUG` : warn.length ? `${warn.length} warn` : 'clean';
+    const detail = f.length
+      ? `<pre>${f.map(x => `${x.sev === 'bad' ? '✗' : '!'} ${x.name} — ${x.detail}`).join('\n')}</pre>`
+      : '<span class="ok">all checks passed</span>';
+    return `<tr><td><b>${slug}</b></td><td class="${cls}">${label}</td><td>${detail}</td></tr>`;
+  }).join('');
+  out.innerHTML = `<table><thead><tr><th>game</th><th>result</th><th>findings</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+document.getElementById('run').addEventListener('click', () => { out.innerHTML = '<p class="lead">Running…</p>'; bugCheck(); });
+globalThis.bugCheck = bugCheck;
+globalThis.GAMES = GAMES;
+</script>
+</body>
+</html>

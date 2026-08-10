@@ -599,3 +599,198 @@ export function registerSelftest(name, fn) {
   };
   globalThis.__selftestName = name;
 }
+
+// ---------------------------------------------------------------- presentation layer
+//
+// Shared chrome so all ten games read as one product rather than ten prototypes.
+//
+// The single biggest thing separating "prototype" from "shipped" here was HUD
+// treatment: 9px labels floating in bare canvas corners look like debug output no
+// matter how good the game under them is. These helpers impose one type scale, one
+// panel language, and one way of drawing glowing entities.
+
+/** One type scale for every game. Sizes are in CSS pixels. */
+export const Type = {
+  micro: 10,   // unit suffixes, footnotes
+  label: 11,   // uppercase, letterspaced, dim — names a value
+  small: 13,
+  body: 15,
+  value: 24,   // the number the label describes
+  big: 34,
+  huge: 54,    // title cards only
+};
+
+export const HUD_H = 56;
+
+/** Wrap any drawing in a glow. Cheaper than drawing the shape three times. */
+export function withGlow(ctx, color, blur, fn) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+  fn();
+  ctx.restore();
+}
+
+/**
+ * A label/value pair — the atom of every HUD in the arcade.
+ * Label sits above in small dim caps; the value below in a large bright figure.
+ */
+export function stat(ctx, x, y, label, value, {
+  color = Palette.ink, labelColor = Palette.dim, align = 'left',
+  valueSize = Type.value, labelSize = Type.label, mono = true,
+} = {}) {
+  const font = mono ? 'ui-monospace, SFMono-Regular, Menlo, monospace'
+                    : 'ui-serif, "New York", Palatino, Georgia, serif';
+  ctx.save();
+  ctx.textAlign = align;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = labelColor;
+  ctx.font = `600 ${labelSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  const prev = ctx.letterSpacing;
+  try { ctx.letterSpacing = '0.14em'; } catch { /* older engines */ }
+  ctx.fillText(String(label).toUpperCase(), x, y);
+  try { ctx.letterSpacing = prev || '0px'; } catch { /* ignore */ }
+  ctx.fillStyle = color;
+  ctx.font = `700 ${valueSize}px ${font}`;
+  ctx.fillText(String(value), x, y + valueSize + 2);
+  ctx.restore();
+}
+
+/** The top status strip. Gives the canvas a horizon line instead of floating text. */
+export function hudStrip(ctx, g, { h = HUD_H, fill = 'rgba(13,16,24,0.92)', border = Palette.grid } = {}) {
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, 0, g.w, h);
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h + 0.5);
+  ctx.lineTo(g.w, h + 0.5);
+  ctx.stroke();
+  ctx.restore();
+  return h;
+}
+
+/** A framed surface. Use for draft cards, dossiers, palettes, end screens. */
+export function panel(ctx, x, y, w, h, {
+  fill = 'rgba(17,22,36,0.94)', border = Palette.grid, radius = 4,
+  glowColor = null, glowBlur = 22, title = null, titleColor = Palette.dim,
+} = {}) {
+  ctx.save();
+  if (glowColor) { ctx.shadowColor = glowColor; ctx.shadowBlur = glowBlur; }
+  ctx.fillStyle = fill;
+  roundRect(ctx, x, y, w, h, radius);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, radius);
+  ctx.stroke();
+  if (title) {
+    ctx.fillStyle = titleColor;
+    ctx.font = `600 ${Type.label}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(String(title).toUpperCase(), x + 13, y + 20);
+  }
+  ctx.restore();
+}
+
+/** A progress/health/resource bar with a proper track, cap and optional glow. */
+export function meter(ctx, x, y, w, h, frac, {
+  color = Palette.accent, track = 'rgba(255,255,255,0.07)', radius = null, glow = true,
+} = {}) {
+  const r = radius == null ? h / 2 : radius;
+  const f = clamp(frac, 0, 1);
+  ctx.save();
+  ctx.fillStyle = track;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fill();
+  if (f > 0.001) {
+    if (glow) { ctx.shadowColor = color; ctx.shadowBlur = 10; }
+    ctx.fillStyle = color;
+    roundRect(ctx, x, y, Math.max(h, w * f), h, r);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * An entity with actual depth: soft outer halo, solid core, bright rim.
+ * Flat fillRect/arc circles are the main reason canvas games read as unfinished.
+ */
+export function orb(ctx, x, y, r, color, { glow = 1, rim = true, core = null } = {}) {
+  ctx.save();
+  if (glow > 0) {
+    const grad = ctx.createRadialGradient(x, y, r * 0.2, x, y, r * (2.2 + glow));
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.35, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.32 * glow;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r * (2.2 + glow), 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = core || color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.fill();
+  if (rim) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.99, -1.9, 0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Darkens the edges so the eye lands on the middle. One call, big effect. */
+export function vignette(ctx, g, strength = 0.5) {
+  const grad = ctx.createRadialGradient(
+    g.w / 2, g.h / 2, Math.min(g.w, g.h) * 0.32,
+    g.w / 2, g.h / 2, Math.max(g.w, g.h) * 0.78,
+  );
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, `rgba(0,0,0,${clamp(strength, 0, 1)})`);
+  ctx.save();
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, g.w, g.h);
+  ctx.restore();
+}
+
+/** Centred title card used by every intro/'game over' overlay. */
+export function titleCard(ctx, g, { title, tagline, lines = [], prompt = null, t = 0, accent = Palette.accent }) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(7,8,13,0.88)';
+  ctx.fillRect(0, 0, g.w, g.h);
+  const cx = g.w / 2;
+  let y = g.h / 2 - 70;
+  ctx.textAlign = 'center';
+  withGlow(ctx, accent, 26, () => {
+    ctx.fillStyle = accent;
+    ctx.font = `700 ${Math.min(Type.huge, g.w * 0.09)}px ui-serif, "New York", Palatino, Georgia, serif`;
+    ctx.fillText(title, cx, y);
+  });
+  y += 34;
+  if (tagline) {
+    ctx.fillStyle = Palette.ink;
+    ctx.font = `500 ${Type.body}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.fillText(tagline, cx, y);
+    y += 26;
+  }
+  ctx.fillStyle = Palette.dim;
+  ctx.font = `400 ${Type.small}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  for (const line of lines) { ctx.fillText(line, cx, y); y += 20; }
+  if (prompt) {
+    const pulse = 0.55 + 0.45 * Math.sin(t * 3);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = Palette.warm;
+    ctx.font = `700 ${Type.small}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    ctx.fillText(prompt, cx, y + 22);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
