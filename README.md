@@ -102,6 +102,40 @@ glider actually travels, The Nine checks that every generated puzzle has exactly
 **Gate 3 — live.** The same runtime gate is re-run against the deployed GitHub Pages URL,
 because passing locally is not evidence that a deployed page works.
 
+**Results, live at `mr-pythoneer.github.io/Gamesx10`** — every game: zero console errors,
+self-test passes in full, and confirmed with real input driven through the actual production
+code path (not just the self-test grading its own homework — a dragged word in Lexicon, a
+timed jump in Pulse, a real click that stamps a pattern in Petri, and so on).
+
+| Game | Self-test | Console | Real-input check |
+|---|---|---|---|
+| Afterimage | 13/13 | clean | verified solution replayed through real `Input`; ghost archival, plate/door, level-clear all confirmed |
+| Orbital | 12/12 | clean | real drag-launch flew the probe, advanced the stroke counter |
+| Swarm | 14/14 | clean | real movement, 27 kills from auto-fire, gem pickup, level-up, and a number-key draft pick all confirmed |
+| Petri | 15/15 | clean | real click stamped a glider (+5 cells, exact pattern size) |
+| Blindsight | 24/24 | clean | real ping lit the reveal buffer; found & fixed a proximity-falloff bug |
+| Lexicon | 24/24 | clean | a real dictionary word, dragged through touching tiles, scored correctly |
+| Pulse | 16/16 | clean | a precisely-timed jump scored "perfect"; a no-input run correctly dies |
+| The Nine | 17/17 | clean | — |
+| Scribble | 21/21 | clean | verified ramp stroke, drawn via real pointer events, delivered the ball to the goal |
+| Mirrorbind | 10/10 | clean | all 10 levels machine-solved and replayed to a win through real `Input` |
+
+Five real bugs were caught and fixed during this pass — not in the games' actual mechanics, but
+in test harnesses and one genuine gameplay bug:
+
+- **Blindsight** — the danger-proximity falloff used a hardcoded radius instead of scaling with
+  map size (a real gameplay fix).
+- **Scribble** — its own self-test raced against the page's live update loop over a
+  multi-hundred-frame physics outcome, and separately mutated real saved progress
+  (`localStorage`) as a side effect of running.
+- **Petri** — its self-test read a population counter one frame after stamping, before the CA's
+  own throttled tick had run; and a throwaway `boot()` call used for live-input testing silently
+  orphaned the page's debug handle.
+- Several apparent failures during manual verification turned out to be test-methodology
+  mistakes on the verifier's part (wrong coordinate transform, racing the live render loop,
+  confusing a legitimate level-advance with a failure) — logged here for transparency, not
+  claimed as game fixes.
+
 <!-- VERIFICATION-RESULTS -->
 
 ---
