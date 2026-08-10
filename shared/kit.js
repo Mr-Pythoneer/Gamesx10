@@ -492,14 +492,17 @@ export function boot(cfg) {
   let acc = 0;
   let last = 0;
   let raf = 0;
+  let watchdog = 0;
+  let lastRafAt = 0;
 
-  function frame(now) {
-    raf = requestAnimationFrame(frame);
+  /** Advance and draw. Safe to call from either clock — it works off elapsed time. */
+  function tick(now) {
     if (!last) last = now;
     let delta = (now - last) / 1000;
     last = now;
-    if (delta > 0.25) delta = 0.25; // tab was backgrounded — don't fast-forward
-    if (!game.paused && !document.hidden) {
+    // Clamp so a tab restored after minutes away doesn't fast-forward through the sim.
+    if (delta > 0.25) delta = 0.25;
+    if (!game.paused) {
       acc += delta;
       let steps = 0;
       while (acc >= fixed && steps < maxSubSteps) { game.step(1); acc -= fixed; steps++; }
@@ -508,14 +511,39 @@ export function boot(cfg) {
     game.draw();
   }
 
+  function rafFrame(now) {
+    raf = requestAnimationFrame(rafFrame);
+    lastRafAt = now;
+    tick(now);
+  }
+
   game.start = () => {
     if (game.running) return game;
     game.running = true;
     last = 0; acc = 0;
-    raf = requestAnimationFrame(frame);
+    lastRafAt = performance.now();
+    raf = requestAnimationFrame(rafFrame);
+
+    // requestAnimationFrame is not always delivered: Chrome pauses it in unfocused
+    // windows, and embedded webviews can report the document as hidden while still
+    // painting. Timer throttling is visibility-based rather than focus-based, so a
+    // watchdog interval keeps the game alive wherever rAF stalls. When rAF is healthy
+    // this costs one comparison per tick and never double-steps, because tick()
+    // integrates elapsed time rather than assuming a fixed cadence.
+    clearInterval(watchdog);
+    watchdog = setInterval(() => {
+      const now = performance.now();
+      if (now - lastRafAt > 200) tick(now);
+    }, 1000 / 60);
+
     return game;
   };
-  game.stop = () => { game.running = false; cancelAnimationFrame(raf); return game; };
+  game.stop = () => {
+    game.running = false;
+    cancelAnimationFrame(raf);
+    clearInterval(watchdog);
+    return game;
+  };
 
   game.state = init(game);
   if (autoStart) game.start();
