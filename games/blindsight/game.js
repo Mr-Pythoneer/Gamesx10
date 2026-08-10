@@ -569,19 +569,19 @@ function drawHud(ctx, s, g) {
   // Slim, low-opacity strip: structure without light.
   hudStrip(ctx, g, { h: HUD, fill: 'rgba(13,16,24,0.55)' });
 
-  stat(ctx, 18, HUD_LABEL_Y, 'shards', `${sim.collected}/${sim.shards.length}`, {
+  stat(ctx, 18, HUD_LABEL_Y, T('shards', '碎片'), `${sim.collected}/${sim.shards.length}`, {
     color: sim.exit.active ? Palette.accent : Palette.ink, valueSize: vs,
   });
-  stat(ctx, 18 + (tiny ? 96 : 128), HUD_LABEL_Y, 'time', fmtTime(sim.time), {
+  stat(ctx, 18 + (tiny ? 96 : 128), HUD_LABEL_Y, T('time', '时间'), fmtTime(sim.time), {
     color: Palette.ink, valueSize: vs,
   });
 
-  stat(ctx, g.w - 18, HUD_LABEL_Y, 'seed', s.seedStr, {
+  stat(ctx, g.w - 18, HUD_LABEL_Y, T('seed', '种子'), s.seedStr, {
     align: 'right', valueSize: vs2, color: Palette.dim,
   });
   if (!compact) {
     const bt = Store.get('time:' + s.seedStr, null);
-    stat(ctx, g.w - 122, HUD_LABEL_Y, 'best', bt === null ? '—' : fmtTime(bt), {
+    stat(ctx, g.w - 122, HUD_LABEL_Y, T('best', '最佳'), bt === null ? '—' : fmtTime(bt), {
       align: 'right', valueSize: vs2, color: Palette.dim,
     });
   }
@@ -589,8 +589,8 @@ function drawHud(ctx, s, g) {
   // ping readiness, bottom-left on the same 18px gutter as the strip
   const mw = compact ? 76 : 98, mh = 5, mx = 18 + 58;
   const rows = [
-    ['wide', 1 - clamp(sim.cool.wide / PING.wide.cool, 0, 1), ACCENT_RGB],
-    ['narrow', 1 - clamp(sim.cool.narrow / PING.narrow.cool, 0, 1), ACCENT2_RGB],
+    [T('wide', '宽波'), 1 - clamp(sim.cool.wide / PING.wide.cool, 0, 1), ACCENT_RGB],
+    [T('narrow', '窄波'), 1 - clamp(sim.cool.narrow / PING.narrow.cool, 0, 1), ACCENT2_RGB],
   ];
   for (let i = 0; i < rows.length; i++) {
     const label = rows[i][0], frac = rows[i][1], col = rows[i][2];
@@ -608,9 +608,10 @@ function drawHud(ctx, s, g) {
 
   if (s.hintT > 0 && s.phase === 'play') {
     const a = clamp(s.hintT / 1.5, 0, 1) * 0.8;
-    const line = tiny ? 'SPACE ping  ·  F cone  ·  SHIFT sneak'
-      : compact ? 'SPACE loud ping  ·  F quiet cone  ·  SHIFT sneak'
-        : 'SPACE = loud ping (it hears you)   ·   F = quiet cone   ·   SHIFT = sneak';
+    const line = tiny ? T('SPACE ping  ·  F cone  ·  SHIFT sneak', 'SPACE 发声  ·  F 锥波  ·  SHIFT 潜行')
+      : compact ? T('SPACE loud ping  ·  F quiet cone  ·  SHIFT sneak', 'SPACE 响波  ·  F 静音锥波  ·  SHIFT 潜行')
+        : T('SPACE = loud ping (it hears you)   ·   F = quiet cone   ·   SHIFT = sneak',
+          'SPACE = 响波(它能听见)   ·   F = 静音锥波   ·   SHIFT = 潜行');
     text(ctx, line, g.w / 2, g.h - 46, {
       size: compact ? Type.label : Type.small,
       color: Palette.dim, align: 'center', baseline: 'middle', alpha: a,
@@ -637,23 +638,27 @@ function introSweep(ctx, g, t) {
 function drawIntro(ctx, s, g) {
   const compact = g.w < 820;
   titleCard(ctx, g, {
-    title: 'BLINDSIGHT',
+    title: T('BLINDSIGHT', '盲视'),
     tagline: compact
-      ? 'Ping to see — it hears every ping.'
-      : 'You are blind. Every ping shows you the maze — and shows the maze where you are.',
+      ? T('Ping to see — it hears every ping.', '发声才能看见——但它也能听见每一次声波。')
+      : T('You are blind. Every ping shows you the maze — and shows the maze where you are.',
+        '你是盲的。每一次声波都会照出迷宫——也会暴露你的位置。'),
     lines: compact
       ? [
-        `Find ${SHARD_COUNT} shards, then reach the exit.`,
-        'WASD move  ·  SPACE loud ping  ·  F cone',
-        'SHIFT sneak  ·  R retry  ·  N new seed',
-        `SEED ${s.seedStr}`,
+        T(`Find ${SHARD_COUNT} shards, then reach the exit.`, `找到 ${SHARD_COUNT} 个碎片,然后到达出口。`),
+        T('WASD move  ·  SPACE loud ping  ·  F cone', 'WASD 移动  ·  SPACE 响波  ·  F 锥波'),
+        T('SHIFT sneak  ·  R retry  ·  N new seed', 'SHIFT 潜行  ·  R 重试  ·  N 新种子'),
+        T(`SEED ${s.seedStr}`, `种子 ${s.seedStr}`),
       ]
       : [
-        `Find ${SHARD_COUNT} shards, then reach the exit. Something in here hunts by sound.`,
-        'WASD / arrows move   ·   SPACE loud ping   ·   F quiet cone   ·   SHIFT sneak',
-        `R restart seed   ·   N new seed   ·   SEED ${s.seedStr}`,
+        T(`Find ${SHARD_COUNT} shards, then reach the exit. Something in here hunts by sound.`,
+          `找到 ${SHARD_COUNT} 个碎片,然后到达出口。有东西在靠声音追踪你。`),
+        T('WASD / arrows move   ·   SPACE loud ping   ·   F quiet cone   ·   SHIFT sneak',
+          'WASD / 方向键 移动   ·   SPACE 响波   ·   F 静音锥波   ·   SHIFT 潜行'),
+        T(`R restart seed   ·   N new seed   ·   SEED ${s.seedStr}`,
+          `R 重开本局   ·   N 新种子   ·   种子 ${s.seedStr}`),
       ],
-    prompt: 'PRESS SPACE',
+    prompt: T('PRESS SPACE', '按空格键开始'),
     t: g.t,
     accent: Palette.accent,
   });
@@ -664,16 +669,19 @@ function drawEnd(ctx, s, g) {
   const won = s.phase === 'won';
   const a = clamp(s.endT / 0.5, 0, 1);
   const bt = Store.get('time:' + s.seedStr, null);
-  const lines = [`${s.sim.collected}/${s.sim.shards.length} shards  ·  seed ${s.seedStr}`];
-  if (bt !== null) lines.push(`best on this seed  ${fmtTime(bt)}`);
+  const lines = [T(
+    `${s.sim.collected}/${s.sim.shards.length} shards  ·  seed ${s.seedStr}`,
+    `${s.sim.collected}/${s.sim.shards.length} 碎片  ·  种子 ${s.seedStr}`,
+  )];
+  if (bt !== null) lines.push(T(`best on this seed  ${fmtTime(bt)}`, `本种子最佳  ${fmtTime(bt)}`));
 
   ctx.save();
   ctx.globalAlpha = a;
   titleCard(ctx, g, {
-    title: won ? 'ESCAPED' : 'CAUGHT',
-    tagline: won ? fmtTime(s.sim.time) : `survived ${fmtTime(s.sim.time)}`,
+    title: won ? T('ESCAPED', '逃脱成功') : T('CAUGHT', '被抓住了'),
+    tagline: won ? fmtTime(s.sim.time) : T(`survived ${fmtTime(s.sim.time)}`, `坚持了 ${fmtTime(s.sim.time)}`),
     lines,
-    prompt: a > 0.9 ? 'SPACE / R  retry seed      N  new seed' : null,
+    prompt: a > 0.9 ? T('SPACE / R  retry seed      N  new seed', 'SPACE / R  重试本种子      N  新种子') : null,
     t: g.t,
     accent: won ? Palette.accent : Palette.hot,
   });

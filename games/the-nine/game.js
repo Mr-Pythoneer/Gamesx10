@@ -25,6 +25,38 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 const ATTR_COLOR = { name: Palette.accent2, role: Palette.warm, fate: Palette.violet };
 const LOCK_HOLD = 3;   // simultaneous correct assignments required to lock a batch
 
+// ---------------------------------------------------------------- i18n for generate.js's fixed vocab
+//
+// TIERS/ATTRS/SHIP in generate.js are fixed constants (not per-seed procedural content),
+// but generate.js itself is out of scope to edit (see file header). These small lookup
+// tables translate that fixed vocabulary for display without touching generate.js.
+const TIER_ZH = { CADET: '新兵', OFFICER: '军官', ARCHIVIST: '档案员' };
+const TIER_BLURB_ZH = {
+  'Two ledgers — names and roles. The papers speak plainly.': '两本记录——姓名与职务。文书直言不讳。',
+  'Three ledgers — names, roles, and how each one ended.': '三本记录——姓名、职务,以及各自的结局。',
+  'Three ledgers, and nothing stated outright.': '三本记录,却无一直言。',
+};
+const ATTR_ZH = { NAME: '姓名', ROLE: '职务', FATE: '结局' };
+const SHIP_LINE_ZH = '勘测三桅船。九人于佩尔港登船,无一归来。';
+
+function tierLabel(tier) { return T(tier.label, TIER_ZH[tier.label] || tier.label); }
+function tierBlurb(tier) { return T(tier.blurb, TIER_BLURB_ZH[tier.blurb] || tier.blurb); }
+function attrLabel(attr) { const l = ATTRS[attr].label; return T(l, ATTR_ZH[l] || l); }
+
+/** Builds the status-line text for the roster panel from a key, not a baked string, so it
+ *  re-translates live if the player flips language while the message is still showing. */
+function msgText(s) {
+  switch (s.msgKey) {
+    case 'start': return T('Read the papers. Fill the roster. Confirm three at once.', '阅读文书,填写花名册。一次确认三项。');
+    case 'need3': return T('Assign at least three before confirming.', '确认前至少分配三项。');
+    case 'nohold': return T('No three hold together.', '没有三项能同时成立。');
+    case 'held': return s.msgArg + T(' held. They are yours for good.', ' 项已锁定,永久属于你。');
+    case 'taken': return T(`That one is already proven at berth ${s.msgArg}.`, `该项已在 ${s.msgArg} 号铺位得到证实。`);
+    case 'locked': return T('Proven. That one cannot change.', '已证实,无法更改。');
+    default: return '';
+  }
+}
+
 // ---------------------------------------------------------------- state
 
 function blankBoard(attrs) {

@@ -652,11 +652,13 @@ function drawHud(s, ctx, g, L) {
 
   // --- left cluster: the run
   const scoreStr = String(sim.score).padStart(6, '0');
-  stat(ctx, 18, 20, 'SCORE', scoreStr, { color: Palette.ink });
-  let lx = 18 + Math.max(mw(scoreStr, Type.value), labelW('SCORE')) + 28;
+  const scoreLabel = T('SCORE', '分数');
+  stat(ctx, 18, 20, scoreLabel, scoreStr, { color: Palette.ink });
+  let lx = 18 + Math.max(mw(scoreStr, Type.value), labelW(scoreLabel)) + 28;
 
   // lives: the label comes from stat() so the typography matches, the value is pips
-  stat(ctx, lx, 20, 'LIVES', '', { color: Palette.hot });
+  const livesLabel = T('LIVES', '生命');
+  stat(ctx, lx, 20, livesLabel, '', { color: Palette.hot });
   const pipW = 11, pipGap = 5;
   for (let i = 0; i < LIVES; i++) {
     const alive = i < sim.lives;
@@ -676,41 +678,46 @@ function drawHud(s, ctx, g, L) {
       ctx.restore();
     }
   }
-  lx += Math.max(LIVES * (pipW + pipGap) - pipGap, labelW('LIVES')) + 28;
+  lx += Math.max(LIVES * (pipW + pipGap) - pipGap, labelW(livesLabel)) + 28;
 
   if (!compact) {
     const comboV = String(sim.combo);
-    stat(ctx, lx, 20, 'COMBO', comboV, {
+    const comboLabel = T('COMBO', '连击');
+    stat(ctx, lx, 20, comboLabel, comboV, {
       valueSize: Type.body, color: sim.combo > 0 ? Palette.ink : Palette.dim,
     });
-    lx += Math.max(mw(comboV, Type.body), labelW('COMBO')) + 24;
+    lx += Math.max(mw(comboV, Type.body), labelW(comboLabel)) + 24;
     const multV = 'x' + sim.mult;
-    stat(ctx, lx, 20, 'MULT', multV, {
+    const multLabel = T('MULT', '倍率');
+    stat(ctx, lx, 20, multLabel, multV, {
       valueSize: Type.body, color: sim.mult > 1 ? Palette.warm : Palette.dim,
     });
-    lx += Math.max(mw(multV, Type.body), labelW('MULT'));
+    lx += Math.max(mw(multV, Type.body), labelW(multLabel));
   }
 
   // --- right cluster: the song. Laid out right to left, dropping the least
   // important stat first when the two clusters would collide.
   let rx = g.w - 18;
   const seedSize = compact ? Type.body : Type.value;
-  stat(ctx, rx, 20, 'SEED', s.seed, { align: 'right', color: Palette.accent, valueSize: seedSize });
-  rx -= Math.max(mw(s.seed, seedSize), labelW('SEED')) + 26;
+  const seedLabel = T('SEED', '种子');
+  stat(ctx, rx, 20, seedLabel, s.seed, { align: 'right', color: Palette.accent, valueSize: seedSize });
+  rx -= Math.max(mw(s.seed, seedSize), labelW(seedLabel)) + 26;
 
   const bpmV = String(song.bpm);
-  const bpmW = Math.max(mw(bpmV, Type.body), labelW('BPM'));
+  const bpmLabel = T('BPM', 'BPM');
+  const bpmW = Math.max(mw(bpmV, Type.body), labelW(bpmLabel));
   if (rx - bpmW > lx + 16) {
-    stat(ctx, rx, 20, 'BPM', bpmV, { align: 'right', valueSize: Type.body });
+    stat(ctx, rx, 20, bpmLabel, bpmV, { align: 'right', valueSize: Type.body });
     rx -= bpmW + 26;
   }
 
   // the full mode name if it fits, otherwise just the tonic, otherwise nothing
+  const keyLabel = T('KEY', '调性');
   const keyFull = `${song.key} ${song.scale.toUpperCase()}`;
   for (const keyV of (mw(keyFull, Type.body) < g.w * 0.3 ? [keyFull, song.key] : [song.key])) {
-    const keyW = Math.max(mw(keyV, Type.body), labelW('KEY'));
+    const keyW = Math.max(mw(keyV, Type.body), labelW(keyLabel));
     if (rx - keyW > lx + 16) {
-      stat(ctx, rx, 20, 'KEY', keyV, { align: 'right', valueSize: Type.body });
+      stat(ctx, rx, 20, keyLabel, keyV, { align: 'right', valueSize: Type.body });
       break;
     }
   }

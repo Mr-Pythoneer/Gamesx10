@@ -2,27 +2,27 @@
 
 export const PATTERNS = [
   {
-    id: 'block', name: 'Block', key: '1', cost: 4,
+    id: 'block', name: 'Block', nameZh: '方块', key: '1', cost: 4,
     desc: 'still life — a stable anchor that never changes',
     cells: [[0, 0], [1, 0], [0, 1], [1, 1]],
   },
   {
-    id: 'blinker', name: 'Blinker', key: '2', cost: 6,
+    id: 'blinker', name: 'Blinker', nameZh: '闪烁体', key: '2', cost: 6,
     desc: 'oscillator — flips between two states forever',
     cells: [[0, 0], [0, 1], [0, 2]],
   },
   {
-    id: 'glider', name: 'Glider', key: '3', cost: 10,
+    id: 'glider', name: 'Glider', nameZh: '滑翔机', key: '3', cost: 10,
     desc: 'travels diagonally, eats whatever is in its path',
     cells: [[1, 0], [2, 1], [0, 2], [1, 2], [2, 2]],
   },
   {
-    id: 'lwss', name: 'LWSS', key: '4', cost: 22,
+    id: 'lwss', name: 'LWSS', nameZh: '轻型飞船', key: '4', cost: 22,
     desc: 'lightweight spaceship — faster, wider push down a lane',
     cells: [[1, 0], [4, 0], [0, 1], [0, 2], [4, 2], [0, 3], [1, 3], [2, 3], [3, 3]],
   },
   {
-    id: 'gun', name: 'Gun', key: '5', cost: 60,
+    id: 'gun', name: 'Gun', nameZh: '滑翔机枪', key: '5', cost: 60,
     desc: 'gosper-style emitter — spits gliders forever once seeded',
     cells: [
       [24, 0],
@@ -37,7 +37,7 @@ export const PATTERNS = [
     ],
   },
   {
-    id: 'seed', name: 'Seed', key: '6', cost: 14,
+    id: 'seed', name: 'Seed', nameZh: '种子', key: '6', cost: 14,
     desc: 'R-pentomino — tiny, chaotic, grows unpredictably',
     cells: [[1, 0], [2, 0], [0, 1], [1, 1], [1, 2]],
   },

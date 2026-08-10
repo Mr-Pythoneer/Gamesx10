@@ -23,7 +23,9 @@ const WALL_R = [960, -400, 960, 900];
 export const LEVELS = [
   {
     name: 'First Line',
+    nameZh: '起笔',
     hint: 'Drag to draw. What you draw is real. Get the ball into the well.',
+    hintZh: '拖动来画线,画出来的东西就是真实的。让球掉进井里。',
     ink: 900,
     par: 560,
     ball: { x: 120, y: 70 },
@@ -39,7 +41,9 @@ export const LEVELS = [
 
   {
     name: 'Long Drop',
+    nameZh: '长空坠落',
     hint: 'Nothing catches the ball but your own handwriting.',
+    hintZh: '除了你自己画的线,没有什么能接住球。',
     ink: 620,
     par: 300,
     ball: { x: 60, y: 160 },
@@ -56,7 +60,9 @@ export const LEVELS = [
 
   {
     name: 'Chasm',
+    nameZh: '深渊',
     hint: 'Ink 1 falls. Ink 2 is nailed to the world. Long spans want tool 2.',
+    hintZh: '墨水1会掉落。墨水2固定在世界上。长跨度用工具2。',
     ink: 700,
     par: 430,
     ball: { x: 70, y: 210 },
@@ -73,7 +79,9 @@ export const LEVELS = [
 
   {
     name: 'Underpass',
+    nameZh: '地下通道',
     hint: 'The slab is in the way. Get low early, then let gravity do the walking.',
+    hintZh: '石板挡住了路。早点降低高度,剩下的交给重力。',
     ink: 560,
     par: 260,
     ball: { x: 60, y: 110 },
@@ -92,7 +100,9 @@ export const LEVELS = [
 
   {
     name: 'Seesaw',
+    nameZh: '跷跷板',
     hint: 'That post is a fulcrum. A short plank plus one PIN beats a giant ramp.',
+    hintZh: '那根柱子是支点。一块短木板加一颗钉子胜过一条长坡道。',
     ink: 560,
     par: 280,
     ball: { x: 60, y: 110 },
@@ -111,7 +121,9 @@ export const LEVELS = [
 
   {
     name: 'Window',
+    nameZh: '窗口',
     hint: 'One gap in the wall. Aim the ball through it.',
+    hintZh: '墙上只有一个缺口。瞄准让球穿过去。',
     ink: 480,
     par: 260,
     ball: { x: 60, y: 90 },
@@ -130,7 +142,9 @@ export const LEVELS = [
 
   {
     name: 'Spike Span',
+    nameZh: '尖刺跨越',
     hint: 'Dynamic ink sags into the spikes. Static ink does not.',
+    hintZh: '会掉落的墨水会垂进尖刺里,固定的墨水不会。',
     ink: 620,
     par: 430,
     ball: { x: 60, y: 230 },
@@ -147,7 +161,9 @@ export const LEVELS = [
 
   {
     name: 'Slot Machine',
+    nameZh: '老虎机',
     hint: 'Drop short and you land on spikes. Sail long and you land on spikes.',
+    hintZh: '掉得太短会落在尖刺上,飞得太远也会落在尖刺上。',
     ink: 460,
     par: 230,
     ball: { x: 60, y: 90 },
@@ -164,7 +180,9 @@ export const LEVELS = [
 
   {
     name: 'Stepping Stones',
+    nameZh: '垫脚石',
     hint: 'Two gaps, one budget. Spend it where the ball actually needs it.',
+    hintZh: '两个缺口,一份预算。把墨水花在球真正需要的地方。',
     ink: 480,
     par: 300,
     ball: { x: 60, y: 190 },
@@ -182,7 +200,9 @@ export const LEVELS = [
 
   {
     name: 'Descent',
+    nameZh: '下降',
     hint: 'Shelves all the way down. Short hops cost less than long ones.',
+    hintZh: '一路都是台阶。短跳比长跳更省墨水。',
     ink: 420,
     par: 220,
     ball: { x: 70, y: 80 },
@@ -200,7 +220,9 @@ export const LEVELS = [
 
   {
     name: 'Needle',
+    nameZh: '针眼',
     hint: 'Almost no ink. One flick of the wrist is the whole level.',
+    hintZh: '几乎没有墨水。手腕轻轻一挥就是整关。',
     ink: 260,
     par: 120,
     ball: { x: 410, y: 50 },
@@ -218,7 +240,9 @@ export const LEVELS = [
 
   {
     name: 'Handwriting',
+    nameZh: '笔迹',
     hint: 'Everything you learned, and barely enough ink to say it.',
+    hintZh: '把学到的一切用上,墨水却几乎不够。',
     ink: 470,
     par: 340,
     ball: { x: 60, y: 80 },

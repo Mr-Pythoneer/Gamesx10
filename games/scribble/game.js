@@ -31,10 +31,10 @@ import {
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 const TOOL_META = {
-  [TOOL_INK]: { key: '1', label: 'INK', color: Palette.warm, blurb: 'falls' },
-  [TOOL_STATIC]: { key: '2', label: 'STATIC', color: Palette.accent2, blurb: 'pinned to world' },
-  [TOOL_PIN]: { key: '3', label: 'PIN', color: Palette.violet, blurb: 'nail a point' },
-  [TOOL_ERASE]: { key: '4', label: 'ERASE', color: Palette.hot, blurb: 'remove + refund' },
+  [TOOL_INK]: { key: '1', labelEn: 'INK', labelZh: '墨水', color: Palette.warm, blurbEn: 'falls', blurbZh: '会掉落' },
+  [TOOL_STATIC]: { key: '2', labelEn: 'STATIC', labelZh: '固定', color: Palette.accent2, blurbEn: 'pinned to world', blurbZh: '固定于世界' },
+  [TOOL_PIN]: { key: '3', labelEn: 'PIN', labelZh: '钉子', color: Palette.violet, blurbEn: 'nail a point', blurbZh: '钉住一点' },
+  [TOOL_ERASE]: { key: '4', labelEn: 'ERASE', labelZh: '擦除', color: Palette.hot, blurbEn: 'remove + refund', blurbZh: '移除并退还' },
 };
 
 /**
@@ -138,7 +138,7 @@ function loadLevel(s, idx) {
   s.msgT = 0;
 }
 
-function say(s, m) { s.msg = m; s.msgT = 1.6; }
+function say(s, en, zh) { s.msgEn = en; s.msgZh = zh || en; s.msgT = 1.6; }
 
 // ---------------------------------------------------------------- update
 
@@ -162,7 +162,12 @@ function update(s, dt, g) {
 
   // --- tools
   for (let i = 0; i < TOOLS.length; i++) {
-    if (I.justPressed(String(i + 1))) { s.tool = TOOLS[i]; say(s, TOOL_META[TOOLS[i]].label); Sound.blip(520 + i * 90); }
+    if (I.justPressed(String(i + 1))) {
+      s.tool = TOOLS[i];
+      const meta = TOOL_META[TOOLS[i]];
+      say(s, meta.labelEn, meta.labelZh);
+      Sound.blip(520 + i * 90);
+    }
   }
 
   // --- level navigation
@@ -173,7 +178,7 @@ function update(s, dt, g) {
     s.winT += dt;
     if ((I.justPressed('space') || I.justPressed('enter')) && s.winT > 0.35) {
       const next = s.levelIndex + 1;
-      if (next >= LEVELS.length) { loadLevel(s, 0); say(s, 'ALL TWELVE SOLVED — RUN IT BACK'); }
+      if (next >= LEVELS.length) { loadLevel(s, 0); say(s, 'ALL TWELVE SOLVED — RUN IT BACK', '十二关全部通关——再来一轮'); }
       else loadLevel(s, next);
       return;
     }
@@ -197,7 +202,7 @@ function update(s, dt, g) {
     const chip = hitPalette(g, I.pointer.x, I.pointer.y);
     if (chip >= 0) {
       s.tool = TOOLS[chip];
-      say(s, TOOL_META[s.tool].label);
+      say(s, TOOL_META[s.tool].labelEn, TOOL_META[s.tool].labelZh);
       Sound.blip(520 + chip * 90);
     } else {
       s.drawing = true;
@@ -233,7 +238,9 @@ function update(s, dt, g) {
     } else if (e.type === 'reject') {
       Sound.bad();
       s.flash = 1;
-      say(s, s.sim.inkUsed + 12 > s.sim.inkBudget ? 'OUT OF INK — Z UNDO / 4 ERASE' : 'THAT STROKE DID NOT TAKE');
+      say(s,
+        s.sim.inkUsed + 12 > s.sim.inkBudget ? 'OUT OF INK — Z UNDO / 4 ERASE' : 'THAT STROKE DID NOT TAKE',
+        s.sim.inkUsed + 12 > s.sim.inkBudget ? '墨水用完了——Z 撤销 / 4 擦除' : '这一笔没有生效');
     } else if (e.type === 'release') {
       Sound.tone({ freq: 420, dur: 0.1, type: 'sine', gain: 0.1, slide: 180 });
     } else if (e.type === 'thud') {
@@ -649,7 +656,8 @@ function pill(ctx, g, cy, str, { fg = Palette.ink, border = Palette.grid, alpha 
  * full strip width so it never has to compete with the numbers for horizontal room.
  */
 function drawHud(s, ctx, g, m, prep) {
-  const L = LEVELS[s.levelIndex];
+  const L0 = LEVELS[s.levelIndex];
+  const L = { ...L0, name: T(L0.name, L0.nameZh || L0.name), hint: T(L0.hint, L0.hintZh || L0.hint) };
   hudStrip(ctx, g, { h: m.hudH });
 
   const padX = m.padX;
@@ -664,9 +672,9 @@ function drawHud(s, ctx, g, m, prep) {
   const inkColor = low ? Palette.hot : (s.sim.inkUsed <= L.par ? Palette.accent : Palette.warm);
 
   const items = [
-    { label: 'ink', value: `${used}/${s.sim.inkBudget}`, color: inkColor },
-    { label: 'par', value: String(L.par), color: Palette.ink },
-    { label: 'best', value: s.best === null ? '—' : String(s.best), color: s.best === null ? Palette.dim : Palette.accent2 },
+    { label: T('ink', '墨水'), value: `${used}/${s.sim.inkBudget}`, color: inkColor },
+    { label: T('par', '标准'), value: String(L.par), color: Palette.ink },
+    { label: T('best', '最佳'), value: s.best === null ? '—' : String(s.best), color: s.best === null ? Palette.dim : Palette.accent2 },
   ];
   const gap = m.compact ? 13 : 20;
   const widths = items.map((it) => statWidth(ctx, it.label, it.value, vs, ls));
@@ -695,7 +703,7 @@ function drawHud(s, ctx, g, m, prep) {
     ctx.font = `700 ${nameSize}px ui-serif, "New York", Palatino, Georgia, serif`;
   }
   ctx.restore();
-  stat(ctx, padX, labelY, `level ${nn}/${NN}`, L.name, {
+  stat(ctx, padX, labelY, T(`level ${nn}/${NN}`, `第 ${nn}/${NN} 关`), L.name, {
     valueSize: nameSize, labelSize: ls, mono: false, color: Palette.ink,
   });
 
@@ -798,9 +806,10 @@ function drawDock(s, ctx, g, m) {
     const room = r.w - (tx - r.x) - 8;
     ctx.save();
     ctx.font = `700 ${labelSize}px ${MONO}`;
-    let lab = meta.label;
+    let lab = T(meta.labelEn, meta.labelZh);
     if (ctx.measureText(lab).width > room) lab = lab.slice(0, 3);
-    const showBlurb = !m.compact && r.h >= 38 && ctx.measureText(meta.blurb).width <= room;
+    const blurb = T(meta.blurbEn, meta.blurbZh);
+    const showBlurb = !m.compact && r.h >= 38 && ctx.measureText(blurb).width <= room;
     ctx.restore();
 
     text(ctx, lab, tx, showBlurb ? r.y + 10 : r.y + r.h / 2, {
@@ -808,7 +817,7 @@ function drawDock(s, ctx, g, m) {
       baseline: showBlurb ? 'top' : 'middle',
     });
     if (showBlurb) {
-      text(ctx, meta.blurb, tx, r.y + 25, {
+      text(ctx, blurb, tx, r.y + 25, {
         size: Type.micro, color: on ? Palette.ink : Palette.dim, alpha: on ? 0.8 : 0.55,
       });
     }
@@ -817,11 +826,11 @@ function drawDock(s, ctx, g, m) {
 
 /** One status slot above the dock, priority-ordered so nothing ever overlaps. */
 function statusLine(s, g) {
-  if (s.sim.status === 'dead') return { t: 'BALL LOST — RESETTING', color: Palette.hot, alpha: 1 };
-  if (s.msgT > 0) return { t: s.msg, color: Palette.warm, alpha: clamp(s.msgT / 0.5, 0, 1) };
+  if (s.sim.status === 'dead') return { t: T('BALL LOST — RESETTING', '球丢了——正在重置'), color: Palette.hot, alpha: 1 };
+  if (s.msgT > 0) return { t: T(s.msgEn, s.msgZh), color: Palette.warm, alpha: clamp(s.msgT / 0.5, 0, 1) };
   if (s.sim.status === 'play' && !s.sim.released && s.sim.bodies.length > 0) {
     const p = 0.45 + 0.55 * Math.sin(g.t * 3.4);
-    return { t: 'SPACE  →  DROP THE BALL', color: Palette.accent, alpha: 0.4 + p * 0.6 };
+    return { t: T('SPACE  →  DROP THE BALL', 'SPACE  →  放球'), color: Palette.accent, alpha: 0.4 + p * 0.6 };
   }
   return null;
 }
@@ -830,7 +839,8 @@ function statusLine(s, g) {
 
 function render(s, ctx, g) {
   const t = g.t;
-  const L = LEVELS[s.levelIndex];
+  const L0 = LEVELS[s.levelIndex];
+  const L = { ...L0, name: T(L0.name, L0.nameZh || L0.name), hint: T(L0.hint, L0.hintZh || L0.hint) };
   const v = getView(g);
   const m = metrics(g);
   // One prepareStroke per frame, shared by the on-paper preview and the HUD ghost bar.
@@ -936,18 +946,19 @@ function render(s, ctx, g) {
     const underPar = ink <= L.par;
     const last = s.levelIndex === LEVELS.length - 1;
     titleCard(ctx, g, {
-      title: last ? 'SKETCHBOOK FULL' : 'SOLVED',
-      tagline: `${ink} INK   ·   PAR ${L.par}`,
+      title: last ? T('SKETCHBOOK FULL', '画本已满') : T('SOLVED', '已解决'),
+      tagline: T(`${ink} INK   ·   PAR ${L.par}`, `${ink} 墨水   ·   标准 ${L.par}`),
       lines: [
-        `${L.name}  ·  level ${s.levelIndex + 1} of ${LEVELS.length}`,
-        s.best === null ? '' : `your best here: ${s.best}`,
+        T(`${L.name}  ·  level ${s.levelIndex + 1} of ${LEVELS.length}`,
+          `${L.name}  ·  第 ${s.levelIndex + 1} / ${LEVELS.length} 关`),
+        s.best === null ? '' : T(`your best here: ${s.best}`, `本关最佳: ${s.best}`),
       ].filter(Boolean),
-      prompt: last ? 'SPACE  →  START OVER' : 'SPACE  →  NEXT LEVEL',
+      prompt: last ? T('SPACE  →  START OVER', 'SPACE  →  重新开始') : T('SPACE  →  NEXT LEVEL', 'SPACE  →  下一关'),
       t,
       accent: underPar ? Palette.accent : Palette.warm,
     });
     if (s.newBest || underPar) {
-      pill(ctx, g, g.h / 2 - 128, s.newBest ? 'NEW PERSONAL BEST' : 'UNDER PAR', {
+      pill(ctx, g, g.h / 2 - 128, s.newBest ? T('NEW PERSONAL BEST', '个人最佳纪录') : T('UNDER PAR', '低于标准'), {
         fg: Palette.warm, border: Palette.warm, size: Type.small,
       });
     }
@@ -955,19 +966,19 @@ function render(s, ctx, g) {
 
   if (s.phase === 'intro') {
     titleCard(ctx, g, {
-      title: 'SCRIBBLE',
-      tagline: 'Draw anything. It becomes real physics.',
+      title: T('SCRIBBLE', '涂鸦'),
+      tagline: T('Draw anything. It becomes real physics.', '画出任何东西,它都会成为真实的物理实体。'),
       lines: [
-        'Ramps, bridges, see-saws, catapults — get the ball home.',
+        T('Ramps, bridges, see-saws, catapults — get the ball home.', '斜坡、桥梁、跷跷板、投石机——想办法送球回家。'),
         '',
-        'DRAG  ·  draw a stroke',
-        '1 / 2  ·  falling ink  ·  world-pinned ink',
-        '3 / 4  ·  pin a point  ·  erase + refund',
-        'SPACE  ·  drop the ball',
-        'R / Z / C  ·  reset  ·  undo  ·  clear',
-        '[ / ]  ·  previous / next level',
+        T('DRAG  ·  draw a stroke', 'DRAG  ·  绘制一笔'),
+        T('1 / 2  ·  falling ink  ·  world-pinned ink', '1 / 2  ·  会掉落的墨水  ·  固定于世界的墨水'),
+        T('3 / 4  ·  pin a point  ·  erase + refund', '3 / 4  ·  钉住一点  ·  擦除并退还'),
+        T('SPACE  ·  drop the ball', 'SPACE  ·  放下球'),
+        T('R / Z / C  ·  reset  ·  undo  ·  clear', 'R / Z / C  ·  重置  ·  撤销  ·  清空'),
+        T('[ / ]  ·  previous / next level', '[ / ]  ·  上一关 / 下一关'),
       ],
-      prompt: 'DRAW SOMETHING',
+      prompt: T('DRAW SOMETHING', '画点什么'),
       t,
       accent: Palette.accent,
     });

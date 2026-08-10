@@ -146,7 +146,7 @@ function handleEvents(s, g) {
       }
       cx /= e.pts.length; cy /= e.pts.length;
       pop(s, cx, cy - 14, '+' + e.gain, e.chain > 0 ? Palette.warm : Palette.accent, 24 + e.word.length * 2);
-      if (e.chain > 0) pop(s, cx, cy - 44, 'CHAIN ×' + mult.toFixed(1), Palette.hot, 20);
+      if (e.chain > 0) pop(s, cx, cy - 44, T('CHAIN ×', '连击 ×') + mult.toFixed(1), Palette.hot, 20);
       FX.shake(3 + e.word.length * 1.2 + e.chain * 4);
       s.goodFlash = 1;
     } else if (e.type === 'reject') {
@@ -442,7 +442,7 @@ function drawDangerLine(ctx, s, v, tt, dg, heat) {
   // label chip, inside the glass, legible over whatever is behind it
   if (!v.compact || v.jarW > 240) {
     const fs = v.compact ? 9 : Type.micro;
-    const label = dg > 0 ? 'OVERFLOWING' : 'TOP LINE';
+    const label = dg > 0 ? T('OVERFLOWING', '已溢出') : T('TOP LINE', '警戒线');
     ctx.font = `700 ${fs}px ui-monospace, SFMono-Regular, Menlo, monospace`;
     const tw = ctx.measureText(label).width;
     const cw = tw + 14;
@@ -536,18 +536,18 @@ function drawHud(s, ctx, g, v, dg) {
   const y = Math.round((v.hudH - (ls + vs + 2)) / 2 + ls);
   const gap = v.compact ? 112 : 152;
 
-  stat(ctx, pad, y, 'score', sim.score, { valueSize: vs, labelSize: ls });
+  stat(ctx, pad, y, T('score', '分数'), sim.score, { valueSize: vs, labelSize: ls });
   if (g.w >= 520) {
-    stat(ctx, pad + gap, y, 'words', sim.wordsMade, {
+    stat(ctx, pad + gap, y, T('words', '单词'), sim.wordsMade, {
       color: Palette.accent, valueSize: vs, labelSize: ls,
     });
   }
-  stat(ctx, g.w - pad, y, 'best', Math.max(s.best, sim.score), {
+  stat(ctx, g.w - pad, y, T('best', '最佳'), Math.max(s.best, sim.score), {
     color: Palette.dim, align: 'right', valueSize: vs, labelSize: ls,
   });
   if (g.w >= 720) {
     const live = sim.chainT > 0;
-    stat(ctx, g.w - pad - gap, y, 'chain', '×' + chainMult(sim.chain).toFixed(1), {
+    stat(ctx, g.w - pad - gap, y, T('chain', '连击'), '×' + chainMult(sim.chain).toFixed(1), {
       color: live ? Palette.hot : Palette.dim, align: 'right', valueSize: vs, labelSize: ls,
     });
   }
@@ -567,7 +567,7 @@ function drawStatusPanel(s, ctx, g, v, dg) {
   if (!v.panelW) return;
   const sim = s.sim;
   const x = v.left, y = v.oy, w = v.panelW, h = v.jarH;
-  panel(ctx, x, y, w, h, { title: 'status', fill: 'rgba(12,16,26,0.9)', radius: 6 });
+  panel(ctx, x, y, w, h, { title: T('status', '状态'), fill: 'rgba(12,16,26,0.9)', radius: 6 });
 
   const px = x + 14;
   const iw = w - 28;
@@ -577,11 +577,11 @@ function drawStatusPanel(s, ctx, g, v, dg) {
   const wordV = v.compact ? 15 : 20;
   let yy = y + (v.compact ? 42 : 50);
 
-  stat(ctx, px, yy, 'best', Math.max(s.best, sim.score), { valueSize: bigV, labelSize: lab });
+  stat(ctx, px, yy, T('best', '最佳'), Math.max(s.best, sim.score), { valueSize: bigV, labelSize: lab });
   yy += bigV + (v.compact ? 22 : 28);
 
   const lw = (s.bestWord && s.bestWord.length >= sim.longest.length) ? s.bestWord : sim.longest;
-  stat(ctx, px, yy, 'longest word', lw ? lw.toUpperCase() : '—', {
+  stat(ctx, px, yy, T('longest word', '最长单词'), lw ? lw.toUpperCase() : '—', {
     color: Palette.accent2, valueSize: wordV, labelSize: lab,
   });
   yy += wordV + (v.compact ? 18 : 24);
@@ -591,7 +591,7 @@ function drawStatusPanel(s, ctx, g, v, dg) {
 
   // pile height — the thing you actually have to manage
   const heat = clamp(Math.max(s.prox, dg), 0, 1);
-  text(ctx, 'PILE HEIGHT', px, yy, { size: lab, weight: 600, color: Palette.dim });
+  text(ctx, T('PILE HEIGHT', '堆叠高度'), px, yy, { size: lab, weight: 600, color: Palette.dim });
   text(ctx, Math.round(heat * 100) + '%', px + iw, yy, {
     size: lab, weight: 600, color: heat > 0.7 ? Palette.hot : Palette.dim, align: 'right',
   });
@@ -600,7 +600,7 @@ function drawStatusPanel(s, ctx, g, v, dg) {
   });
   yy += lab + 18;
 
-  text(ctx, 'TILES', px, yy, { size: lab, weight: 600, color: Palette.dim });
+  text(ctx, T('TILES', '字块'), px, yy, { size: lab, weight: 600, color: Palette.dim });
   text(ctx, sim.tiles.length + ' / ' + MAX_TILES, px + iw, yy, {
     size: lab, weight: 600, color: Palette.dim, align: 'right',
   });
@@ -615,9 +615,9 @@ function drawStatusPanel(s, ctx, g, v, dg) {
     hline(ctx, px, yy, iw);
     yy += v.compact ? 12 : 16;
     const rows = [
-      [Palette.accent2, 'VOWELS'],
+      [Palette.accent2, T('VOWELS', '元音')],
       [Palette.violet, 'J  Q  X  Z'],
-      [Palette.dim, 'CONSONANTS'],
+      [Palette.dim, T('CONSONANTS', '辅音')],
     ];
     for (const [c, name] of rows) {
       ctx.save();
@@ -638,9 +638,9 @@ function drawStatusPanel(s, ctx, g, v, dg) {
   if (h > 220) {
     const fy = y + h - footH;
     hline(ctx, px, fy - (v.compact ? 8 : 12), iw);
-    text(ctx, 'DRAG THROUGH TOUCHING TILES', px, fy, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
-    text(ctx, 'RELEASE TO SUBMIT', px, fy + rowH, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
-    text(ctx, 'R   RESTART', px, fy + rowH * 2, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
+    text(ctx, T('DRAG THROUGH TOUCHING TILES', '拖动经过相邻的字块'), px, fy, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
+    text(ctx, T('RELEASE TO SUBMIT', '松开手指提交'), px, fy + rowH, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
+    text(ctx, T('R   RESTART', 'R   重新开始'), px, fy + rowH * 2, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
   }
 }
 
@@ -651,7 +651,7 @@ function drawWordsPanel(s, ctx, g, v, tt) {
   const y = v.oy, w = v.panelW, h = v.jarH;
   const live = sim.chainT > 0;
   panel(ctx, x, y, w, h, {
-    title: 'words found', fill: 'rgba(12,16,26,0.9)', radius: 6,
+    title: T('words found', '已找单词'), fill: 'rgba(12,16,26,0.9)', radius: 6,
     border: live ? Palette.hot : Palette.grid,
   });
 
@@ -665,14 +665,14 @@ function drawWordsPanel(s, ctx, g, v, tt) {
   const cy = y + h - chainH;
   hline(ctx, px, cy, iw);
   const m = chainMult(sim.chain);
-  text(ctx, 'CHAIN', px, cy + (v.compact ? 10 : 14), { size: lab, weight: 600, color: Palette.dim });
+  text(ctx, T('CHAIN', '连击'), px, cy + (v.compact ? 10 : 14), { size: lab, weight: 600, color: Palette.dim });
   text(ctx, '×' + m.toFixed(1), px + iw, cy + (v.compact ? 6 : 8), {
     size: v.compact ? 20 : 26, weight: 700, align: 'right',
     color: live ? Palette.hot : Palette.dim, alpha: live ? 1 : 0.55,
   });
   meter(ctx, px, cy + chainH - (v.compact ? 18 : 22), iw, 5,
     live ? clamp(sim.chainT / CHAIN_WINDOW, 0, 1) : 0, { color: Palette.hot });
-  text(ctx, live ? 'SPELL AGAIN' : 'CLEAR A WORD TO OPEN A CHAIN',
+  text(ctx, live ? T('SPELL AGAIN', '再拼一个') : T('CLEAR A WORD TO OPEN A CHAIN', '拼出一个单词以开启连击'),
     px, cy + chainH - (v.compact ? 11 : 13), {
       size: v.compact ? 9 : Type.micro, weight: 600, alpha: 0.7,
       color: live ? Palette.warm : Palette.dim,
@@ -736,21 +736,22 @@ function drawWordBar(s, ctx, g, v, tt) {
         size: v.compact ? 15 : 20, weight: 700, align: 'right', baseline: 'middle',
         color: Palette.warm,
       });
-      text(ctx, 'RELEASE', x + 14, mid, {
+      text(ctx, T('RELEASE', '松开'), x + 14, mid, {
         size: sml, weight: 600, baseline: 'middle', color: Palette.dim, alpha: 0.8,
       });
     } else if (sim.word.length >= MIN_WORD) {
-      text(ctx, 'NOT A WORD', x + w - 14, mid, {
+      text(ctx, T('NOT A WORD', '不是单词'), x + w - 14, mid, {
         size: sml, weight: 700, align: 'right', baseline: 'middle', color: Palette.hot, alpha: 0.85,
       });
     } else {
-      text(ctx, MIN_WORD + ' LETTERS MINIMUM', x + w - 14, mid, {
+      text(ctx, T(MIN_WORD + ' LETTERS MINIMUM', '至少 ' + MIN_WORD + ' 个字母'), x + w - 14, mid, {
         size: sml, weight: 600, align: 'right', baseline: 'middle', color: Palette.dim, alpha: 0.8,
       });
     }
   } else if (live) {
     const a = clamp(sim.chainT / CHAIN_WINDOW, 0, 1);
-    text(ctx, 'CHAIN ×' + chainMult(sim.chain).toFixed(1) + '  —  SPELL AGAIN', cx, mid, {
+    text(ctx, T('CHAIN ×' + chainMult(sim.chain).toFixed(1) + '  —  SPELL AGAIN',
+      '连击 ×' + chainMult(sim.chain).toFixed(1) + '  —  再拼一个'), cx, mid, {
       size: v.compact ? 14 : 18, weight: 700, align: 'center', baseline: 'middle', color: Palette.hot,
     });
     ctx.save();
@@ -758,12 +759,12 @@ function drawWordBar(s, ctx, g, v, tt) {
     meter(ctx, x + 8, y + h - 6, (w - 16) * a, 3, 1, { color: Palette.hot, track: 'rgba(0,0,0,0)', radius: 0 });
     ctx.restore();
   } else if (sim.hintIds.length && !sim.over) {
-    text(ctx, 'THERE IS A WORD IN THERE', cx, mid, {
+    text(ctx, T('THERE IS A WORD IN THERE', '这里面藏着一个单词'), cx, mid, {
       size: v.compact ? 12 : 15, weight: 700, align: 'center', baseline: 'middle',
       color: Palette.warm, alpha: 0.5 + 0.4 * Math.sin(tt * 4.2),
     });
   } else {
-    text(ctx, 'DRAG THROUGH TOUCHING LETTERS', cx, mid, {
+    text(ctx, T('DRAG THROUGH TOUCHING LETTERS', '拖动经过相邻的字母'), cx, mid, {
       size: v.compact ? 12 : 15, weight: 600, align: 'center', baseline: 'middle',
       color: Palette.dim, alpha: 0.65,
     });
@@ -854,15 +855,18 @@ function render(s, ctx, g) {
   // ---- overlays
   if (s.phase === 'intro') {
     titleCard(ctx, g, {
-      title: 'LEXICON',
-      tagline: 'Letters rain. Words vaporize. The pile collapses.',
+      title: T('LEXICON', '词典'),
+      tagline: T('Letters rain. Words vaporize. The pile collapses.',
+        '字母如雨落下,拼出的单词会消失,堆叠随之坍塌。'),
       lines: [
-        'Drag through TOUCHING letters to spell a word.',
-        '3 letters minimum · release to submit · backtrack to undo',
-        'Spell again before the rubble settles for a CHAIN multiplier.',
-        'Let the pile rest above the top line and it is over.',
+        T('Drag through TOUCHING letters to spell a word.', '拖动经过相邻的字母来拼出一个单词。'),
+        T('3 letters minimum · release to submit · backtrack to undo',
+          '至少 3 个字母 · 松手提交 · 回退可撤销'),
+        T('Spell again before the rubble settles for a CHAIN multiplier.',
+          '在碎块落定前再拼一个单词,即可获得连击加成。'),
+        T('Let the pile rest above the top line and it is over.', '堆叠一旦停在警戒线以上,游戏结束。'),
       ],
-      prompt: 'CLICK TO START',
+      prompt: T('CLICK TO START', '点击开始'),
       t: tt,
       accent: Palette.accent,
     });

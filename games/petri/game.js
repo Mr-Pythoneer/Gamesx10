@@ -21,11 +21,11 @@ const REGEN_BASE = 2.2;              // biomass/sec baseline
 const REGEN_PER_CELL = 0.028;        // biomass/sec per live cell you own
 
 const LEVELS = [
-  { name: 'Spore', aiInterval: 3.6, aiPatterns: ['glider', 'block'], aiSkill: 0 },
-  { name: 'Colony', aiInterval: 2.8, aiPatterns: ['glider', 'blinker', 'seed'], aiSkill: 1 },
-  { name: 'Bloom', aiInterval: 2.2, aiPatterns: ['glider', 'lwss', 'seed'], aiSkill: 2 },
-  { name: 'Swarm', aiInterval: 1.7, aiPatterns: ['glider', 'lwss', 'gun', 'seed'], aiSkill: 3 },
-  { name: 'Hive', aiInterval: 1.2, aiPatterns: ['glider', 'lwss', 'gun', 'seed', 'blinker'], aiSkill: 4 },
+  { name: 'Spore', nameZh: '孢子', aiInterval: 3.6, aiPatterns: ['glider', 'block'], aiSkill: 0 },
+  { name: 'Colony', nameZh: '群落', aiInterval: 2.8, aiPatterns: ['glider', 'blinker', 'seed'], aiSkill: 1 },
+  { name: 'Bloom', nameZh: '绽放', aiInterval: 2.2, aiPatterns: ['glider', 'lwss', 'seed'], aiSkill: 2 },
+  { name: 'Swarm', nameZh: '蜂群', aiInterval: 1.7, aiPatterns: ['glider', 'lwss', 'gun', 'seed'], aiSkill: 3 },
+  { name: 'Hive', nameZh: '蜂巢', aiInterval: 1.2, aiPatterns: ['glider', 'lwss', 'gun', 'seed', 'blinker'], aiSkill: 4 },
 ];
 
 // ---------------------------------------------------------------- pure CA step
@@ -505,7 +505,9 @@ function renderTop(state, ctx, game, L) {
 
   const sel = patternById(state.selected);
   const afford = s.biomassP >= sel.cost;
-  const lvlLabel = `LEVEL ${state.levelIndex + 1}/${LEVELS.length}`;
+  const levelDef = LEVELS[clamp(state.levelIndex, 0, LEVELS.length - 1)];
+  const levelName = T(s.level, levelDef.nameZh || s.level);
+  const lvlLabel = T(`LEVEL ${state.levelIndex + 1}/${LEVELS.length}`, `关卡 ${state.levelIndex + 1}/${LEVELS.length}`);
   const bioStr = String(Math.floor(s.biomassP));
   const timeStr = `${s.matchTime.toFixed(1)}s`;
   const timeW = Math.max(mw(timeStr.length), lw(4));
@@ -516,7 +518,7 @@ function renderTop(state, ctx, game, L) {
   let meterW = L.compact ? 70 : 104;
   const avail = game.w - pad * 2 - timeW - gap;
   const measure = () => {
-    const a = showName ? Math.max(mw(s.level.length), lw(lvlLabel.length)) : Math.max(mw(3), lw(5));
+    const a = showName ? Math.max(mw(levelName.length), lw(lvlLabel.length)) : Math.max(mw(3), lw(5));
     const b = showTerr ? Math.max(mw(4), lw(9)) : 0;
     const c = Math.max(mw(bioStr.length) + 10 + meterW, lw(7));
     return { a, b, c, total: a + b + c + gap * (showTerr ? 2 : 1) };
@@ -528,18 +530,18 @@ function renderTop(state, ctx, game, L) {
 
   let x = pad;
   stat(ctx, x, labelY,
-    showName ? lvlLabel : 'LEVEL',
-    showName ? String(s.level).toUpperCase() : `${state.levelIndex + 1}/${LEVELS.length}`,
+    showName ? lvlLabel : T('LEVEL', '关卡'),
+    showName ? levelName.toUpperCase() : `${state.levelIndex + 1}/${LEVELS.length}`,
     { valueSize: vs, labelSize: ls, color: Palette.ink });
   x += col.a + gap;
 
   if (showTerr) {
-    stat(ctx, x, labelY, 'TERRITORY', `${Math.round(s.pctP * 100)}%`,
+    stat(ctx, x, labelY, T('TERRITORY', '领地'), `${Math.round(s.pctP * 100)}%`,
       { valueSize: vs, labelSize: ls, color: Palette.accent });
     x += col.b + gap;
   }
 
-  stat(ctx, x, labelY, 'BIOMASS', bioStr,
+  stat(ctx, x, labelY, T('BIOMASS', '生物质'), bioStr,
     { valueSize: vs, labelSize: ls, color: afford ? Palette.ink : Palette.warm });
   const mx = x + mw(bioStr.length) + 10;
   const mh = L.compact ? 7 : 8;
@@ -555,7 +557,7 @@ function renderTop(state, ctx, game, L) {
     ctx.restore();
   }
 
-  stat(ctx, game.w - pad, labelY, 'TIME', timeStr,
+  stat(ctx, game.w - pad, labelY, T('TIME', '时间'), timeStr,
     { align: 'right', valueSize: vs, labelSize: ls, color: Palette.dim });
 
   renderTerritoryBar(state, ctx, game, L, ls);
@@ -574,15 +576,15 @@ function renderTerritoryBar(state, ctx, game, L, ls) {
   const pw = w * clamp(s.pctP, 0, 1);
   const aw = w * clamp(s.pctAI, 0, 1);
 
-  text(ctx, `YOU ${Math.round(s.pctP * 100)}%`, x, labelY,
+  text(ctx, T(`YOU ${Math.round(s.pctP * 100)}%`, `你方 ${Math.round(s.pctP * 100)}%`), x, labelY,
     { size: ls, color: Palette.accent, weight: 700, baseline: 'alphabetic' });
-  text(ctx, `${Math.round(s.pctAI * 100)}% RIVAL`, x + w, labelY,
+  text(ctx, T(`${Math.round(s.pctAI * 100)}% RIVAL`, `对手 ${Math.round(s.pctAI * 100)}%`), x + w, labelY,
     { size: ls, color: Palette.hot, weight: 700, align: 'right', baseline: 'alphabetic' });
 
   if (s.domTimerP > 0 || s.domTimerAI > 0) {
     const mine = s.domTimerP > 0;
     const left = Math.max(0, DOMINANCE_HOLD - (mine ? s.domTimerP : s.domTimerAI));
-    text(ctx, `${mine ? 'HOLD' : 'LOSING'} ${left.toFixed(1)}s`, x + w / 2, labelY,
+    text(ctx, mine ? T(`HOLD ${left.toFixed(1)}s`, `坚守 ${left.toFixed(1)}秒`) : T(`LOSING ${left.toFixed(1)}s`, `失守 ${left.toFixed(1)}秒`), x + w / 2, labelY,
       { size: ls, color: Palette.warm, weight: 700, align: 'center', baseline: 'alphabetic' });
   }
 
@@ -651,10 +653,10 @@ function renderPalette(state, ctx, game, L) {
 
   const ls = L.compact ? 10 : Type.label;
   const headY = y0 + (L.compact ? 13 : 16);
-  text(ctx, 'PATTERNS', pad, headY, { size: ls, color: Palette.dim, weight: 700, baseline: 'alphabetic' });
+  text(ctx, T('PATTERNS', '图案'), pad, headY, { size: ls, color: Palette.dim, weight: 700, baseline: 'alphabetic' });
   const hint = game.w < 620
-    ? `ROT ${state.rot * 90}`
-    : `ROT ${state.rot * 90}  ·  R ROTATE  ·  CLICK TO STAMP`;
+    ? T(`ROT ${state.rot * 90}`, `旋转 ${state.rot * 90}`)
+    : T(`ROT ${state.rot * 90}  ·  R ROTATE  ·  CLICK TO STAMP`, `旋转 ${state.rot * 90}  ·  R 键旋转  ·  点击放置`);
   text(ctx, hint, game.w - pad, headY,
     { size: ls, color: Palette.dim, weight: 600, align: 'right', baseline: 'alphabetic' });
 
@@ -692,9 +694,9 @@ function renderPalette(state, ctx, game, L) {
       size: Type.label, color: selected ? Palette.accent : afford ? Palette.dim : 'rgba(120,132,156,0.7)',
       align: 'center', baseline: 'alphabetic', weight: 700,
     });
-    text(ctx, p.name, bx + badgeW + 6, by + badgeH - (L.compact ? 2 : 3),
+    text(ctx, T(p.name, p.nameZh || p.name), bx + badgeW + 6, by + badgeH - (L.compact ? 2 : 3),
       { size: Type.small, color: ink, weight: 700, baseline: 'alphabetic' });
-    text(ctx, `${p.cost} BM`, bx, chipY + chipH - (L.compact ? 8 : 11), {
+    text(ctx, T(`${p.cost} BM`, `${p.cost} 生物质`), bx, chipY + chipH - (L.compact ? 8 : 11), {
       size: L.compact ? Type.label : Type.small,
       color: afford ? Palette.accent2 : Palette.hot, weight: 700, baseline: 'alphabetic',
     });
@@ -715,16 +717,20 @@ function renderPalette(state, ctx, game, L) {
 
 function renderIntro(state, ctx, game) {
   titleCard(ctx, game, {
-    title: 'PETRI',
-    tagline: "seed it, don't steer it",
+    title: T('PETRI', '培养皿'),
+    tagline: T("seed it, don't steer it", '播下种子,而非操控它'),
     lines: [
-      'You never move a unit. You spend biomass to stamp living patterns onto',
-      'the dish, and they spread, collide and consume on their own.',
+      T('You never move a unit. You spend biomass to stamp living patterns onto',
+        '你不能直接操控单元。你花费生物质,把有生命的图案印在'),
+      T('the dish, and they spread, collide and consume on their own.',
+        '培养皿上,任由它们自行扩散、碰撞、吞噬。'),
       '',
-      '1-6 pick a pattern  ·  R rotates it  ·  click stamps it',
-      `Hold ${Math.round(DOMINANCE_PCT * 100)}% of the living cells for ${DOMINANCE_HOLD}s to take the dish.`,
+      T('1-6 pick a pattern  ·  R rotates it  ·  click stamps it',
+        '1-6 选择图案  ·  R 键旋转  ·  点击放置'),
+      T(`Hold ${Math.round(DOMINANCE_PCT * 100)}% of the living cells for ${DOMINANCE_HOLD}s to take the dish.`,
+        `占据 ${Math.round(DOMINANCE_PCT * 100)}% 的存活细胞并坚持 ${DOMINANCE_HOLD} 秒即可占领培养皿。`),
     ],
-    prompt: 'PRESS SPACE',
+    prompt: T('PRESS SPACE', '按空格键开始'),
     t: game.t,
     accent: Palette.accent,
   });
@@ -733,17 +739,25 @@ function renderIntro(state, ctx, game) {
 function renderEnd(state, ctx, game) {
   const s = state.sim;
   const won = s.phase === 'won';
+  const levelDef = LEVELS[clamp(state.levelIndex, 0, LEVELS.length - 1)];
+  const levelName = T(s.level, levelDef.nameZh || s.level);
   titleCard(ctx, game, {
-    title: won ? 'TERRITORY SECURED' : 'COLONY LOST',
-    tagline: `${s.level}  ·  level ${state.levelIndex + 1} of ${LEVELS.length}`,
+    title: won ? T('TERRITORY SECURED', '领地已占领') : T('COLONY LOST', '菌落覆灭'),
+    tagline: T(`${s.level}  ·  level ${state.levelIndex + 1} of ${LEVELS.length}`,
+      `${levelName}  ·  第 ${state.levelIndex + 1}/${LEVELS.length} 关`),
     lines: [
       won
-        ? `cleared in ${s.matchTime.toFixed(1)}s`
-        : `the rival colony took the dish in ${s.matchTime.toFixed(1)}s`,
-      `final share  ·  you ${Math.round(s.pctP * 100)}%  ·  rival ${Math.round(s.pctAI * 100)}%`,
-      `best level ${state.bestLevel}/${LEVELS.length}` + (state.fastestWin ? `  ·  fastest win ${state.fastestWin}s` : ''),
+        ? T(`cleared in ${s.matchTime.toFixed(1)}s`, `用时 ${s.matchTime.toFixed(1)} 秒通关`)
+        : T(`the rival colony took the dish in ${s.matchTime.toFixed(1)}s`,
+          `对手菌落用了 ${s.matchTime.toFixed(1)} 秒占领了培养皿`),
+      T(`final share  ·  you ${Math.round(s.pctP * 100)}%  ·  rival ${Math.round(s.pctAI * 100)}%`,
+        `最终占比  ·  你方 ${Math.round(s.pctP * 100)}%  ·  对手 ${Math.round(s.pctAI * 100)}%`),
+      T(`best level ${state.bestLevel}/${LEVELS.length}` + (state.fastestWin ? `  ·  fastest win ${state.fastestWin}s` : ''),
+        `最佳关卡 ${state.bestLevel}/${LEVELS.length}` + (state.fastestWin ? `  ·  最快通关 ${state.fastestWin} 秒` : '')),
     ],
-    prompt: won && state.levelIndex < LEVELS.length - 1 ? 'PRESS SPACE FOR THE NEXT COLONY' : 'PRESS SPACE TO RETRY',
+    prompt: won && state.levelIndex < LEVELS.length - 1
+      ? T('PRESS SPACE FOR THE NEXT COLONY', '按空格键进入下一菌落')
+      : T('PRESS SPACE TO RETRY', '按空格键重试'),
     t: game.t,
     accent: won ? Palette.accent : Palette.hot,
   });
