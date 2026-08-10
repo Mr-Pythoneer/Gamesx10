@@ -1,0 +1,190 @@
+/* Gamesx10 — shared visual language. Dark, neon, system mono. No web fonts (zero downloads). */
+
+:root {
+  --bg: #07080d;
+  --bg2: #0d1018;
+  --panel: #111624;
+  --grid: #171d2c;
+  --ink: #e9edf7;
+  --dim: #78849c;
+  --accent: #5ef2c0;
+  --accent2: #3ba7ff;
+  --hot: #ff4d6d;
+  --warm: #ffc857;
+  --violet: #a06bff;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------- game shell */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  background: linear-gradient(180deg, var(--bg2), var(--bg));
+  border-bottom: 1px solid var(--grid);
+  flex: 0 0 auto;
+  min-height: 42px;
+  user-select: none;
+}
+
+.topbar .back {
+  color: var(--dim);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  padding: 4px 9px;
+  border: 1px solid var(--grid);
+  border-radius: 7px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.topbar .back:hover { color: var(--accent); border-color: var(--accent); text-decoration: none; }
+
+.topbar h1 {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin: 0;
+  color: var(--ink);
+}
+
+.topbar .tag {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.topbar .spacer { flex: 1; }
+
+.topbar .keys {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+}
+.topbar .keys b {
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-weight: 600;
+  margin: 0 1px;
+}
+
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg);
+}
+
+canvas#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+/* ---------------------------------------------------------------- overlays */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 8, 13, 0.82);
+  backdrop-filter: blur(3px);
+  z-index: 5;
+  text-align: center;
+  padding: 24px;
+}
+.overlay[hidden] { display: none; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 26px 30px;
+  max-width: 560px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.card p { margin: 0 0 14px; color: var(--dim); font-size: 13px; line-height: 1.65; }
+.card p b, .card p strong { color: var(--ink); font-weight: 600; }
+.card kbd {
+  background: var(--bg2);
+  border: 1px solid var(--grid);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 12px;
+  color: var(--ink);
+  font-family: var(--mono);
+}
+
+button, .btn {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 22px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: transform 0.1s, filter 0.15s;
+}
+button:hover, .btn:hover { filter: brightness(1.12); text-decoration: none; }
+button:active, .btn:active { transform: translateY(1px); }
+button.ghost {
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--grid);
+}
+button.ghost:hover { color: var(--ink); border-color: var(--dim); }
+
+.file-warning {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 99;
+  padding: 30px;
+}
