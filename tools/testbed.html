@@ -66,9 +66,14 @@ function loadGame(slug, timeoutMs = 12000) {
       if (typeof w.__selftest !== 'function') {
         return done({ slug, ok: false, reason: 'no window.__selftest — the module did not evaluate', errors });
       }
+      // kit.js installs a collector at import time, so this catches errors thrown
+      // during module evaluation — before our own listeners could have attached.
+      try { if (Array.isArray(w.__errors)) errors.push(...w.__errors); } catch {}
+
       try {
         const res = await w.__selftest();
-        done({ slug, ok: !!res.pass, res, errors });
+        try { if (Array.isArray(w.__errors)) errors.length = 0, errors.push(...w.__errors); } catch {}
+        done({ slug, ok: !!res.pass && errors.length === 0, res, errors });
       } catch (e) {
         done({ slug, ok: false, reason: 'self-test threw: ' + (e && (e.stack || e.message) || e), errors });
       }

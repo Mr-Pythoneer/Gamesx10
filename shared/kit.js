@@ -5,6 +5,19 @@
 // All randomness comes from a seeded RNG, all timing from the fixed-step accumulator.
 // Same seed + same inputs => identical run. That is what makes window.__selftest() meaningful.
 
+// Every game imports this module, so installing the collector here gives all ten pages
+// error capture for free — including errors thrown before any game code runs. The runtime
+// gate reads window.__errors to prove a page loaded clean, rather than trusting a screenshot.
+if (typeof globalThis.addEventListener === 'function' && !globalThis.__errors) {
+  globalThis.__errors = [];
+  globalThis.addEventListener('error', (e) => {
+    globalThis.__errors.push(String((e && (e.message || e.error)) || e));
+  });
+  globalThis.addEventListener('unhandledrejection', (e) => {
+    globalThis.__errors.push('unhandled rejection: ' + String(e && e.reason));
+  });
+}
+
 export const Palette = {
   bg: '#07080d',
   bg2: '#0d1018',

@@ -22,18 +22,24 @@ export const MAX_WORD = 8;
 export const CHAIN_WINDOW = 2.6;  // seconds to land the next clear
 export const HINT_DELAY = 7;      // seconds of nothing before a tile pulses
 
-// physics
+// physics — semi-implicit Euler + sequential-impulse contact solver.
+// Velocity impulses accumulate per contact (so a deep stack actually converges to
+// rest) and penetration is fixed in a separate position pass that never touches
+// velocity — that split is what stops a settled pile from jittering forever.
 const GRAVITY = 980;
-const DAMP = 0.992;               // per-step velocity retention (verlet)
-const ITER = 6;                   // constraint relaxation passes
-const REST = 0.08;                // tile-tile restitution
-const FRIC = 0.5;                 // tile-tile tangential damping
-const WALL_E = 0.06;
-const WALL_F = 0.55;
-const RELAX = 0.85;               // positional correction factor (<1 = stable)
-const SLEEP_V = 3.0;              // world units/sec
-const SLEEP_FRAMES = 12;
-const WAKE_OVERLAP = 0.25;
+const DAMP = 0.999;               // per-step velocity retention
+const MAXV = 900;                 // world units/sec — also prevents tunnelling
+const VEL_ITER = 10;
+const POS_ITER = 3;
+const REST = 0.12;                // restitution, only above IMPACT_V
+const IMPACT_V = 90;              // below this a contact is inelastic
+const MU = 0.55;                  // contact friction
+const POS_SLOP = 0.05;
+const POS_RELAX = 0.4;
+const SQUASH_V = 150;
+const SLEEP_V = 8.0;              // world units/sec (0.13 px/frame — invisible)
+const SLEEP_FRAMES = 16;
+const WAKE_OVERLAP = 0.35;
 
 // ---------------------------------------------------------------- letters
 
@@ -166,7 +172,7 @@ export function adjacent(a, b) {
 export function addTile(sim, letter, x, y) {
   const t = {
     id: sim.nextId++, letter,
-    x, y, px: x, py: y, r: TILE_R,
+    x, y, vx: 0, vy: 0, r: TILE_R,
     still: 0, asleep: false, speed: 0, squash: 0, born: sim.t,
   };
   sim.tiles.push(t);
