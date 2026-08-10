@@ -28,7 +28,7 @@ export const HOLES = [
     bodies: [
       { type: 'planet', x: 720, y: 450, r: 78 },
     ],
-    solution: { a: -0.2792526803190927, p: 502.66666666666663 },
+    solution: { a: 0.24434609527920614, p: 484.46666666666664 },
   },
 
   {
@@ -41,7 +41,7 @@ export const HOLES = [
     bodies: [
       { type: 'planet', x: 700, y: 470, r: 70 },
     ],
-    solution: { a: -0.4886921905584123, p: 502.66666666666663 },
+    solution: { a: 6.03883921190038, p: 420.5066666666667 },
   },
 
   {
@@ -55,27 +55,27 @@ export const HOLES = [
       { type: 'planet', x: 640, y: 180, r: 62 },
       { type: 'planet', x: 640, y: 720, r: 62 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 0, p: 477.36 },
   },
 
   {
     name: 'Moonshot',
-    par: 3,
+    par: 2,
     hint: 'Moons nudge. Planets shove.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 160, y: 790 },
-    goal: { x: 1290, y: 140, r: 30 },
+    goal: { x: 1290, y: 140, r: 34 },
     bodies: [
       { type: 'moon', x: 520, y: 560, r: 30 },
       { type: 'moon', x: 900, y: 340, r: 30 },
       { type: 'planet', x: 700, y: 830, r: 58 },
     ],
-    solution: { a: -0.5934119456780721, p: 502.66666666666663 },
+    solution: { a: 5.82939970166106, p: 477.36 },
   },
 
   {
     name: 'Behind the Curtain',
-    par: 3,
+    par: 2,
     hint: 'You cannot go through it. Go around and let it reel you back.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 150, y: 180 },
@@ -84,22 +84,22 @@ export const HOLES = [
       { type: 'planet', x: 640, y: 430, r: 88 },
       { type: 'moon', x: 1180, y: 300, r: 30 },
     ],
-    solution: { a: 0.4886921905584123, p: 502.66666666666663 },
+    solution: { a: 0.7853981633974482, p: 491.5733333333334 },
   },
 
   {
     name: 'Cradle',
-    par: 3,
+    par: 2,
     hint: 'Three wells, one lane. Read the whole curve before you let go.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 140, y: 450 },
-    goal: { x: 1250, y: 640, r: 30 },
+    goal: { x: 1250, y: 640, r: 34 },
     bodies: [
       { type: 'planet', x: 560, y: 290, r: 60 },
       { type: 'planet', x: 560, y: 660, r: 48 },
       { type: 'moon', x: 960, y: 450, r: 28 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 0.17453292519943295, p: 491.5733333333333 },
   },
 
   {
@@ -114,7 +114,7 @@ export const HOLES = [
       { type: 'moon', x: 700, y: 150, r: 28 },
       { type: 'moon', x: 700, y: 750, r: 28 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 0.47123889803846897, p: 413.4000000000001 },
   },
 
   {
@@ -128,7 +128,7 @@ export const HOLES = [
       { type: 'repulsor', x: 640, y: 300, r: 52 },
       { type: 'planet', x: 1000, y: 380, r: 58 },
     ],
-    solution: { a: -0.5934119456780721, p: 502.66666666666663 },
+    solution: { a: 0.06981317007977317, p: 235.73333333333335 },
   },
 
   {
@@ -137,18 +137,18 @@ export const HOLES = [
     hint: 'The hole is small and the gap is smaller.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 140, y: 450 },
-    goal: { x: 1310, y: 470, r: 28 },
+    goal: { x: 1310, y: 470, r: 30 },
     bodies: [
       { type: 'planet', x: 500, y: 240, r: 58 },
       { type: 'blackhole', x: 860, y: 680, r: 22 },
       { type: 'moon', x: 1080, y: 240, r: 28 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: -0.017453292519943295, p: 477.36 },
   },
 
   {
     name: 'Binary',
-    par: 4,
+    par: 3,
     hint: 'Dead centre is the only place their pull agrees to leave you alone.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 150, y: 450 },
@@ -157,7 +157,7 @@ export const HOLES = [
       { type: 'blackhole', x: 640, y: 280, r: 22 },
       { type: 'blackhole', x: 640, y: 620, r: 22 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 0, p: 477.36 },
   },
 
   {
@@ -171,7 +171,7 @@ export const HOLES = [
       { type: 'repulsor', x: 900, y: 470, r: 58 },
       { type: 'moon', x: 780, y: 830, r: 26 },
     ],
-    solution: { a: 0.4886921905584123, p: 502.66666666666663 },
+    solution: { a: 0.8028514559173915, p: 193.09333333333333 },
   },
 
   {
@@ -180,12 +180,12 @@ export const HOLES = [
     hint: 'That moon is moving. The clock starts when you let go.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 150, y: 450 },
-    goal: { x: 1300, y: 450, r: 30 },
+    goal: { x: 1300, y: 450, r: 32 },
     bodies: [
       { type: 'planet', x: 720, y: 450, r: 54 },
       { type: 'moon', r: 30, orbit: { cx: 720, cy: 450, r: 250, w: 1.4, phase: -1.5707963267948966 } },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 6.1086523819801535, p: 484.46666666666664 },
   },
 
   {
@@ -200,7 +200,7 @@ export const HOLES = [
       { type: 'wormhole', x: 1010, y: 300, r: 32, link: 0 },
       { type: 'planet', x: 760, y: 810, r: 52 },
     ],
-    solution: { a: -0.5934119456780721, p: 502.66666666666663 },
+    solution: { a: 5.759586531581288, p: 477.36 },
   },
 
   {
@@ -215,7 +215,7 @@ export const HOLES = [
       { type: 'wormhole', x: 620, y: 760, r: 30, link: 0 },
       { type: 'planet', x: 980, y: 450, r: 66 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: -0.03490658503988659, p: 413.4000000000001 },
   },
 
   {
@@ -231,23 +231,23 @@ export const HOLES = [
       { type: 'wormhole', x: 1030, y: 170, r: 30, link: 1 },
       { type: 'planet', x: 900, y: 700, r: 50 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 1.0995574287564276, p: 249.9466666666667 },
   },
 
   {
     name: 'Gauntlet',
-    par: 4,
+    par: 5,
     hint: 'Everything at once, and the preview runs out early.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 140, y: 450 },
-    goal: { x: 1320, y: 450, r: 28 },
+    goal: { x: 1320, y: 450, r: 36 },
     bodies: [
       { type: 'planet', x: 430, y: 240, r: 52 },
       { type: 'repulsor', x: 700, y: 450, r: 40 },
       { type: 'blackhole', x: 990, y: 680, r: 22 },
       { type: 'moon', x: 1150, y: 230, r: 28 },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 0.5585053606381855, p: 299.6933333333333 },
   },
 
   {
@@ -256,13 +256,13 @@ export const HOLES = [
     hint: 'Two moons, two directions, one window.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 150, y: 800 },
-    goal: { x: 1300, y: 140, r: 30 },
+    goal: { x: 1300, y: 140, r: 36 },
     bodies: [
       { type: 'planet', x: 700, y: 450, r: 56 },
       { type: 'moon', r: 28, orbit: { cx: 700, cy: 450, r: 230, w: 1.6, phase: 0 } },
       { type: 'moon', r: 26, orbit: { cx: 700, cy: 450, r: 350, w: -1, phase: 2.4 } },
     ],
-    solution: { a: -0.5934119456780721, p: 502.66666666666663 },
+    solution: { a: 5.8643062867009474, p: 491.5733333333333 },
   },
 
   {
@@ -271,7 +271,7 @@ export const HOLES = [
     hint: 'You have seen all of it. Now do it blind.',
     bounds: { x: 0, y: 0, w: 1440, h: 900 },
     start: { x: 140, y: 150 },
-    goal: { x: 1300, y: 780, r: 28 },
+    goal: { x: 1300, y: 780, r: 34 },
     bodies: [
       { type: 'blackhole', x: 560, y: 430, r: 22 },
       { type: 'repulsor', x: 920, y: 300, r: 38 },
@@ -279,7 +279,7 @@ export const HOLES = [
       { type: 'wormhole', x: 1120, y: 170, r: 30, link: 2 },
       { type: 'moon', r: 28, orbit: { cx: 980, cy: 660, r: 190, w: -1.2, phase: 1.2 } },
     ],
-    solution: { a: 0, p: 502.66666666666663 },
+    solution: { a: 6.14355896702004, p: 477.36 },
   },
 ];
 

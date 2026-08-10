@@ -3,19 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mirrorbind — Gamesx10</title>
-<meta name="description" content="One set of keys controls two mirrored versions of you at once. Both must get home.">
+<title>Orbital — Gamesx10</title>
+<meta name="description" content="N-body gravity golf. Launch a probe, slingshot it round planets and black holes, sink it under par.">
 <link rel="stylesheet" href="../../shared/arcade.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='rgb(11,12,15)'/><path d='M16 4V28' stroke='rgb(60,70,92)' stroke-width='1.5' stroke-dasharray='3 3'/><rect x='4' y='13' width='7' height='12' fill='rgb(255,200,87)'/><rect x='21' y='13' width='7' height='12' fill='rgb(59,167,255)'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🪐</text></svg>">
 </head>
 <body>
 <div class="shell">
   <div class="topbar">
     <a class="back" href="../../index.html">&larr; arcade</a>
-    <h1>Mirrorbind</h1>
-    <span class="tag">one input, two brains</span>
+    <h1>Orbital</h1>
+    <span class="tag">n-body gravity golf</span>
     <span class="spacer"></span>
-    <span class="keys"><b>&larr;</b><b>&rarr;</b> move <b>space</b> jump <b>R</b> retry</span>
+    <span class="keys"><b>drag</b> launch <b>space</b> fast-forward <b>R</b> reset hole</span>
   </div>
   <div class="stage">
     <canvas id="game"></canvas>
@@ -27,7 +27,7 @@
     <h2>Serve me over http</h2>
     <p>This game uses ES modules, which browsers refuse to load from <code>file://</code>.</p>
     <p>Run <kbd>python3 -m http.server</kbd> in the repo root and open
-      <kbd>http://localhost:8000/games/mirrorbind/</kbd> — or just play it on GitHub&nbsp;Pages.</p>
+      <kbd>http://localhost:8000/games/orbital/</kbd> — or just play it on GitHub&nbsp;Pages.</p>
   </div>
 </div>
 

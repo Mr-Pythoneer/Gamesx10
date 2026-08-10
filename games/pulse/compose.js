@@ -285,9 +285,12 @@ export function compose(seedString) {
           velocity: 0.95, midi, bar, step: 8, sustain: si >= 1,
         });
       } else {
+        const fifthDeg = scale.steps.length >= 7 ? 4 : 3;   // diatonic, so always in key
         for (const st of bassPat) {
-          const alt = st === 0 ? 0 : (rng.bool(0.22) ? 7 : (rng.bool(0.2) ? 12 : 0));
-          const midi = bassRoot + (alt === 7 ? scale.steps[Math.min(4, scale.steps.length - 1)] : alt);
+          const r = st === 0 ? 1 : rng.next();
+          const midi = r < 0.22 ? degToMidi(scale, root, chordDeg + fifthDeg)
+            : r < 0.42 ? bassRoot + 12
+              : bassRoot;
           push({
             time: t0 + st * s16 + swingOf(st), dur: s16 * 1.7, freq: mtof(midi),
             kind: 'bass', velocity: st === 0 ? 0.95 : 0.75, midi, bar, step: st,

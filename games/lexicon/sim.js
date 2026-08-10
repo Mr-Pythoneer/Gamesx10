@@ -28,18 +28,18 @@ export const HINT_DELAY = 7;      // seconds of nothing before a tile pulses
 // velocity — that split is what stops a settled pile from jittering forever.
 const GRAVITY = 980;
 const DAMP = 0.999;               // per-step velocity retention
-const MAXV = 900;                 // world units/sec — also prevents tunnelling
-const VEL_ITER = 10;
-const POS_ITER = 3;
+const MAXV = 620;                 // world units/sec — also prevents tunnelling
+const VEL_ITER = 8;
+const POS_ITER = 4;
 const REST = 0.12;                // restitution, only above IMPACT_V
 const IMPACT_V = 90;              // below this a contact is inelastic
-const MU = 0.55;                  // contact friction
+const MU = 0.45;                  // contact friction
 const POS_SLOP = 0.05;
-const POS_RELAX = 0.4;
+const POS_RELAX = 0.5;
 const SQUASH_V = 150;
-const SLEEP_V = 8.0;              // world units/sec (0.13 px/frame — invisible)
+const SLEEP_V = 10.0;             // world units/sec (0.17 px/frame — invisible)
 const SLEEP_FRAMES = 16;
-const WAKE_OVERLAP = 0.35;
+const WAKE_OVERLAP = 0.6;
 
 // ---------------------------------------------------------------- letters
 
@@ -187,7 +187,7 @@ function spawnInterval(sim) {
 function spawnTile(sim) {
   const letter = pickLetter(sim);
   const margin = TILE_R + 2;
-  let bestX = margin, bestTop = -1;
+  let bestX = margin, bestTop = -Infinity;
   for (let k = 0; k < 2; k++) {
     const x = margin + sim.rng.next() * (WORLD_W - margin * 2);
     let top = WORLD_H;
@@ -236,12 +236,15 @@ export function makeSim(seed = 1, opts = {}) {
     badFlash: 0,
     impact: 0,
     events: [],
+    impulses: new Map(),   // warm-start cache, keyed by contact
   };
+  // Opening rain: a curtain of tiles already on the way down.
   const prefill = opts.prefill === undefined ? 16 : opts.prefill;
+  const margin = TILE_R + 2;
   for (let i = 0; i < prefill; i++) {
-    const t = spawnTile(sim);
-    t.y = -TILE_R - 8 - i * 46;
-    t.py = t.y;
+    const t = addTile(sim, pickLetter(sim), margin + sim.rng.next() * (WORLD_W - margin * 2), -TILE_R - 8 - i * 44);
+    sim.dropped++;
+    t.vy = 60;
   }
   sim.spawnT = spawnInterval(sim);
   return sim;
@@ -253,133 +256,199 @@ function wake(t) {
   if (!t.asleep) return;
   t.asleep = false;
   t.still = 0;
-  t.px = t.x; t.py = t.y;
 }
 
 export function wakeAll(sim) {
   for (let i = 0; i < sim.tiles.length; i++) wake(sim.tiles[i]);
 }
 
-function resolvePair(sim, a, b, first, dt) {
-  let dx = b.x - a.x, dy = b.y - a.y;
-  const rr = a.r + b.r;
-  let d2 = dx * dx + dy * dy;
-  if (d2 >= rr * rr) return;
-  if (a.asleep && b.asleep) return;
+// Contact pool — reused every frame so a full jar allocates nothing.
+const STATIC = { x: 0, y: 0, vx: 0, vy: 0, asleep: true, r: 0, id: -1 };
+const _pool = [];
+let _nc = 0;
 
-  let d = Math.sqrt(d2);
-  if (d < 1e-5) { dx = (a.id + b.id) % 2 ? 0.7 : -0.7; dy = -0.7; d = Math.hypot(dx, dy); }
-  const nx = dx / d, ny = dy / d;
-  const overlap = rr - d;
-
-  if (a.asleep && overlap > WAKE_OVERLAP) wake(a);
-  if (b.asleep && overlap > WAKE_OVERLAP) wake(b);
-
-  const am = a.asleep ? 0 : 1, bm = b.asleep ? 0 : 1;
-  const tot = am + bm;
-  if (tot === 0) return;
-
-  if (first) {
-    const avx = a.x - a.px, avy = a.y - a.py;
-    const bvx = b.x - b.px, bvy = b.y - b.py;
-    const rvx = bvx - avx, rvy = bvy - avy;
-    const vn = rvx * nx + rvy * ny;
-    if (vn < 0) {
-      const jm = -(1 + REST) * vn / tot;
-      a.px += nx * jm * am; a.py += ny * jm * am;
-      b.px -= nx * jm * bm; b.py -= ny * jm * bm;
-
-      const imp = -vn / dt;
-      if (imp > 120) {
-        const s = Math.min(1, (imp - 120) / 520);
-        if (s > a.squash) a.squash = s;
-        if (s > b.squash) b.squash = s;
-        if (s > sim.impact) sim.impact = s;
-      }
-      const tx = -ny, ty = nx;
-      const vt = rvx * tx + rvy * ty;
-      const jt = FRIC * vt / tot;
-      a.px -= tx * jt * am; a.py -= ty * jt * am;
-      b.px += tx * jt * bm; b.py += ty * jt * bm;
-    }
-  }
-
-  const corr = overlap * RELAX;
-  a.x -= nx * corr * (am / tot); a.y -= ny * corr * (am / tot);
-  b.x += nx * corr * (bm / tot); b.y += ny * corr * (bm / tot);
+function newContact(key, cache) {
+  if (_nc >= _pool.length) _pool.push({ ai: 0, bi: -1, nx: 0, ny: 0, pd: 0, ni: 0, ti: 0, key: 0 });
+  const c = _pool[_nc++];
+  c.key = key;
+  const w = cache.get(key);
+  // Warm start: last frame's impulse is this frame's first guess. Without it a
+  // deep stack never converges in a handful of iterations and creeps forever.
+  c.ni = w ? w[0] : 0;
+  c.ti = w ? w[1] : 0;
+  return c;
 }
 
-function resolveWalls(sim, t, first, dt) {
-  if (t.asleep) return;
-  const r = t.r;
-  if (t.x < r) {
-    t.x = r;
-    if (first) {
-      const v = t.x - t.px;
-      if (v < 0) {
-        t.px = t.x + v * WALL_E;
-        const vy = t.y - t.py; t.py = t.y - vy * (1 - WALL_F);
-      }
+function addWallContact(i, key, cache, nx, ny, pd) {
+  const c = newContact(key, cache);
+  c.ai = i; c.bi = -1; c.nx = nx; c.ny = ny; c.pd = pd;
+  return c;
+}
+
+function buildContacts(sim, tiles) {
+  _nc = 0;
+  STATIC.vx = 0; STATIC.vy = 0; STATIC.x = 0; STATIC.y = 0;
+  const cache = sim.impulses;
+  buildPairs(tiles, TILE_R * 2 + 1, _pairs);
+  for (let p = 0; p < _pairs.length; p += 2) {
+    const i = _pairs[p], j = _pairs[p + 1];
+    const a = tiles[i], b = tiles[j];
+    let dx = b.x - a.x, dy = b.y - a.y;
+    const rr = a.r + b.r;
+    let d = Math.hypot(dx, dy);
+    if (!(d < rr)) continue;   // NaN-safe: an unknown distance is never a contact
+    const pen = rr - d;
+    // Only a MOVING tile wakes a sleeper. Two sleepers jammed against the walls
+    // can legitimately rest inside each other; waking them on penetration alone
+    // makes the whole pile breathe forever.
+    if (pen > WAKE_OVERLAP) {
+      if (!a.asleep) wake(b);
+      else if (!b.asleep) wake(a);
     }
-  } else if (t.x > WORLD_W - r) {
-    t.x = WORLD_W - r;
-    if (first) {
-      const v = t.x - t.px;
-      if (v > 0) {
-        t.px = t.x + v * WALL_E;
-        const vy = t.y - t.py; t.py = t.y - vy * (1 - WALL_F);
+    if (d < 1e-5) { dx = (a.id + b.id) % 2 ? 1 : -1; dy = -1; d = Math.hypot(dx, dy); }
+    const nx = dx / d, ny = dy / d;
+    const c = newContact(a.id * 8388608 + b.id, cache);
+    c.ai = i; c.bi = j; c.nx = nx; c.ny = ny; c.pd = 0;
+    const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+    if (vn < -SQUASH_V) {
+      const s = Math.min(1, (-vn - SQUASH_V) / 520);
+      if (s > a.squash) a.squash = s;
+      if (s > b.squash) b.squash = s;
+      if (s > sim.impact) sim.impact = s;
+    }
+  }
+  for (let i = 0; i < tiles.length; i++) {
+    const t = tiles[i];
+    const r = t.r;
+    if (t.x < r) addWallContact(i, -(t.id * 4 + 1), cache, -1, 0, -r);
+    else if (t.x > WORLD_W - r) addWallContact(i, -(t.id * 4 + 2), cache, 1, 0, WORLD_W - r);
+    if (t.y > WORLD_H - r) {
+      addWallContact(i, -(t.id * 4 + 3), cache, 0, 1, WORLD_H - r);
+      if (t.vy > SQUASH_V) {
+        const s = Math.min(1, (t.vy - SQUASH_V) / 520);
+        if (s > t.squash) t.squash = s;
+        if (s > sim.impact) sim.impact = s;
       }
     }
   }
-  if (t.y > WORLD_H - r) {
-    t.y = WORLD_H - r;
-    if (first) {
-      const v = t.y - t.py;
-      if (v > 0) {
-        const imp = v / dt;
-        if (imp > 140) {
-          const s = Math.min(1, (imp - 140) / 560);
-          if (s > t.squash) t.squash = s;
-          if (s > sim.impact) sim.impact = s;
-        }
-        t.py = t.y + v * WALL_E;
-        const vx = t.x - t.px; t.px = t.x - vx * (1 - WALL_F);
-      }
-    }
+}
+
+function warmStart(tiles) {
+  for (let k = 0; k < _nc; k++) {
+    const c = _pool[k];
+    const a = tiles[c.ai];
+    const b = bodyOf(tiles, c.bi);
+    const px = c.nx * c.ni - c.ny * c.ti;
+    const py = c.ny * c.ni + c.nx * c.ti;
+    if (invMass(a, c.ai)) { a.vx -= px; a.vy -= py; }
+    if (invMass(b, c.bi)) { b.vx += px; b.vy += py; }
+  }
+}
+
+function storeImpulses(sim) {
+  const next = new Map();
+  for (let k = 0; k < _nc; k++) {
+    const c = _pool[k];
+    if (c.ni !== 0 || c.ti !== 0) next.set(c.key, [c.ni, c.ti]);
+  }
+  sim.impulses = next;
+}
+
+const bodyOf = (tiles, i) => (i < 0 ? STATIC : tiles[i]);
+const invMass = (t, i) => (i < 0 || t.asleep ? 0 : 1);
+
+function penOf(c, a, b) {
+  if (c.bi < 0) return a.x * c.nx + a.y * c.ny - c.pd;
+  return a.r + b.r - Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function solveVelocity(tiles) {
+  for (let k = 0; k < _nc; k++) {
+    const c = _pool[k];
+    const a = tiles[c.ai];
+    const b = bodyOf(tiles, c.bi);
+    const ima = invMass(a, c.ai), imb = invMass(b, c.bi);
+    const sum = ima + imb;
+    if (sum === 0) continue;
+
+    const vn = (b.vx - a.vx) * c.nx + (b.vy - a.vy) * c.ny;
+    const bias = vn < -IMPACT_V ? -REST * vn : 0;
+    let lam = -(vn - bias) / sum;
+    const oldN = c.ni;
+    c.ni = Math.max(0, oldN + lam);
+    lam = c.ni - oldN;
+    if (ima) { a.vx -= c.nx * lam; a.vy -= c.ny * lam; }
+    if (imb) { b.vx += c.nx * lam; b.vy += c.ny * lam; }
+
+    const tx = -c.ny, ty = c.nx;
+    const vt = (b.vx - a.vx) * tx + (b.vy - a.vy) * ty;
+    const maxF = MU * c.ni;
+    const oldT = c.ti;
+    c.ti = clamp(oldT - vt / sum, -maxF, maxF);
+    const lt = c.ti - oldT;
+    if (ima) { a.vx -= tx * lt; a.vy -= ty * lt; }
+    if (imb) { b.vx += tx * lt; b.vy += ty * lt; }
+  }
+}
+
+/**
+ * Penetration only — never touches velocity, so it cannot pump energy in.
+ * Sleeping tiles DO get separated here (a frozen overlap would otherwise wake
+ * its neighbours forever), but they are not woken by it.
+ */
+function solvePosition(tiles) {
+  for (let k = 0; k < _nc; k++) {
+    const c = _pool[k];
+    const a = tiles[c.ai];
+    const b = bodyOf(tiles, c.bi);
+    const ima = 1, imb = c.bi < 0 ? 0 : 1;
+    const sum = ima + imb;
+    const pen = penOf(c, a, b);
+    if (!(pen > POS_SLOP)) continue;
+    const corr = (pen - POS_SLOP) * POS_RELAX / sum;
+    if (ima) { a.x -= c.nx * corr; a.y -= c.ny * corr; }
+    if (imb) { b.x += c.nx * corr; b.y += c.ny * corr; }
   }
 }
 
 function physics(sim, dt) {
   const tiles = sim.tiles;
-  const g = GRAVITY * dt * dt;
 
   for (let i = 0; i < tiles.length; i++) {
     const t = tiles[i];
     if (t.squash > 0) t.squash = Math.max(0, t.squash - dt * 4.5);
-    if (t.asleep) { t.px = t.x; t.py = t.y; t.speed = 0; continue; }
-    const vx = (t.x - t.px) * DAMP;
-    const vy = (t.y - t.py) * DAMP;
-    t.px = t.x; t.py = t.y;
-    t.x += vx;
-    t.y += vy + g;
+    if (t.asleep) { t.vx = 0; t.vy = 0; t.speed = 0; continue; }
+    t.vy += GRAVITY * dt;
+    t.vx *= DAMP; t.vy *= DAMP;
+    t.vx = clamp(t.vx, -MAXV, MAXV);
+    t.vy = clamp(t.vy, -MAXV, MAXV);
+    t.x += t.vx * dt;
+    t.y += t.vy * dt;
   }
 
-  buildPairs(tiles, TILE_R * 2 + 6, _pairs);
-  for (let it = 0; it < ITER; it++) {
-    const first = it === 0;
-    for (let p = 0; p < _pairs.length; p += 2) {
-      resolvePair(sim, tiles[_pairs[p]], tiles[_pairs[p + 1]], first, dt);
-    }
-    for (let i = 0; i < tiles.length; i++) resolveWalls(sim, tiles[i], first, dt);
-  }
+  buildContacts(sim, tiles);
+  warmStart(tiles);
+  for (let it = 0; it < VEL_ITER; it++) solveVelocity(tiles);
+  storeImpulses(sim);
+  for (let it = 0; it < POS_ITER; it++) solvePosition(tiles);
 
   for (let i = 0; i < tiles.length; i++) {
     const t = tiles[i];
+    // Belt and braces: a rogue non-finite tile is re-dropped rather than
+    // allowed to poison every distance test it touches.
+    if (!Number.isFinite(t.x) || !Number.isFinite(t.y) || !Number.isFinite(t.vx) || !Number.isFinite(t.vy)) {
+      t.x = WORLD_W / 2; t.y = -t.r; t.vx = 0; t.vy = 0;
+    }
+    // hard containment — the solver is soft, the jar is not
+    if (t.x < t.r) { t.x = t.r; if (t.vx < 0) t.vx = 0; }
+    else if (t.x > WORLD_W - t.r) { t.x = WORLD_W - t.r; if (t.vx > 0) t.vx = 0; }
+    if (t.y > WORLD_H - t.r) { t.y = WORLD_H - t.r; if (t.vy > 0) t.vy = 0; }
     if (t.asleep) continue;
-    const sp = Math.hypot(t.x - t.px, t.y - t.py) / dt;
+
+    const sp = Math.hypot(t.vx, t.vy);
     t.speed = sp;
     if (sp < SLEEP_V) t.still++; else t.still = 0;
-    if (t.still >= SLEEP_FRAMES) { t.asleep = true; t.px = t.x; t.py = t.y; t.speed = 0; }
+    if (t.still >= SLEEP_FRAMES) { t.asleep = true; t.vx = 0; t.vy = 0; t.speed = 0; }
   }
 }
 

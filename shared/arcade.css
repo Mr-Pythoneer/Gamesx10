@@ -12,8 +12,12 @@
   --hot: #ff4d6d;
   --warm: #ffc857;
   --violet: #a06bff;
+  /* Two typefaces, both from the system — zero downloads, real hierarchy.
+     A serif display against a monospace body reads like a catalogue entry for a
+     machine, which is what each of these is. */
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --radius: 12px;
+  --display: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --radius: 3px;
 }
 
 * { box-sizing: border-box; }
@@ -59,7 +63,7 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.04em;
   padding: 4px 9px;
   border: 1px solid var(--grid);
-  border-radius: 7px;
+  border-radius: 2px;
   transition: color 0.15s, border-color 0.15s;
 }
 .topbar .back:hover { color: var(--accent); border-color: var(--accent); text-decoration: none; }
@@ -137,9 +141,9 @@ canvas#game {
 }
 .card h2 {
   margin: 0 0 10px;
-  font-size: 22px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--display);
+  font-size: 27px;
+  letter-spacing: 0.01em;
   color: var(--accent);
 }
 .card p { margin: 0 0 14px; color: var(--dim); font-size: 13px; line-height: 1.65; }
@@ -163,7 +167,7 @@ button, .btn {
   color: var(--bg);
   background: var(--accent);
   border: none;
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 10px 22px;
   cursor: pointer;
   font-weight: 700;

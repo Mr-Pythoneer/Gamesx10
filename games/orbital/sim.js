@@ -44,9 +44,9 @@ export const HOLE_COUNT = HOLES.length;
 
 /** Preview length by hole: full flight early, half by the middle, a stub on the back six. */
 export function previewSteps(holeIndex) {
-  if (holeIndex < 6) return 620;
-  if (holeIndex < 12) return 250;
-  return 84;
+  if (holeIndex < 6) return 640;   // holes 1-6: the whole flight, all the way down
+  if (holeIndex < 12) return 120;  // holes 7-12: about two seconds of future
+  return 46;                       // holes 13-18: a stub. Now you are flying it.
 }
 
 // ---------------------------------------------------------------- construction
