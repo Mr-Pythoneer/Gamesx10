@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gamesx10 — runtime testbed</title>
+<link rel="stylesheet" href="../shared/arcade.css">
+<style>
+  body { overflow-y: auto; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 30px 20px 60px; }
+  h1 { font-size: 20px; letter-spacing: 0.1em; text-transform: uppercase; margin: 0 0 6px; }
+  .lead { color: var(--dim); font-size: 13px; line-height: 1.7; margin: 0 0 20px; max-width: 70ch; }
+  #stage { position: fixed; left: -9999px; top: 0; width: 900px; height: 600px; }
+  iframe { width: 900px; height: 600px; border: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 16px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--dim); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; }
+  .pass { color: var(--accent); }
+  .fail { color: var(--hot); }
+  .muted { color: var(--dim); }
+  pre { margin: 4px 0 0; font-size: 11px; color: var(--hot); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Runtime testbed</h1>
+  <p class="lead">
+    Loads every game in turn, waits for its module to evaluate, and runs its
+    <code>window.__selftest()</code> — the same scripted, headless session each game ships.
+    Open the console and call <code>await runAll()</code>, or click below.
+  </p>
+  <button id="run">Run all self-tests</button>
+  <div id="out"></div>
+</div>
+<div id="stage"></div>
+
+<script type="module">
+const GAMES = ['afterimage','orbital','swarm','petri','blindsight','lexicon','pulse','the-nine','scribble','mirrorbind'];
+const stage = document.getElementById('stage');
+const out = document.getElementById('out');
+
+function loadGame(slug, timeoutMs = 12000) {
+  return new Promise((resolve) => {
+    const frame = document.createElement('iframe');
+    const errors = [];
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      try { frame.remove(); } catch {}
+      resolve(result);
+    };
+
+    frame.src = `../games/${slug}/index.html?testbed=1`;
+    frame.addEventListener('load', async () => {
+      const w = frame.contentWindow;
+      try {
+        w.addEventListener('error', (e) => errors.push(String(e.message || e.error)));
+        w.addEventListener('unhandledrejection', (e) => errors.push('unhandled rejection: ' + String(e.reason)));
+      } catch {}
+
+      // Module scripts may still be evaluating when load fires.
+      const deadline = Date.now() + 6000;
+      while (typeof w.__selftest !== 'function' && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      if (typeof w.__selftest !== 'function') {
+        return done({ slug, ok: false, reason: 'no window.__selftest — the module did not evaluate', errors });
+      }
+      try {
+        const res = await w.__selftest();
+        done({ slug, ok: !!res.pass, res, errors });
+      } catch (e) {
+        done({ slug, ok: false, reason: 'self-test threw: ' + (e && (e.stack || e.message) || e), errors });
+      }
+    });
+
+    setTimeout(() => done({ slug, ok: false, reason: `timed out after ${timeoutMs}ms`, errors }), timeoutMs);
+    stage.appendChild(frame);
+  });
+}
+
+async function runAll(list = GAMES) {
+  const results = [];
+  for (const slug of list) results.push(await loadGame(slug));
+  render(results);
+  const summary = {
+    passed: results.filter((r) => r.ok).length,
+    total: results.length,
+    failing: results.filter((r) => !r.ok).map((r) => r.slug),
+    detail: results.map((r) => ({
+      slug: r.slug,
+      ok: r.ok,
+      checks: r.res ? r.res.checks.length : 0,
+      ms: r.res ? r.res.ms : null,
+      failed: r.res ? r.res.checks.filter((c) => !c.pass).map((c) => c.name + (c.detail ? ' — ' + c.detail : '')) : [],
+      reason: r.reason || null,
+      errors: r.errors,
+    })),
+  };
+  globalThis.__results = summary;
+  return summary;
+}
+
+function render(results) {
+  const rows = results.map((r) => {
+    const failed = r.res ? r.res.checks.filter((c) => !c.pass) : [];
+    const detail = r.reason
+      ? `<pre>${r.reason}</pre>`
+      : failed.length
+        ? `<pre>${failed.map((c) => '✗ ' + c.name + (c.detail ? ' — ' + c.detail : '')).join('\n')}</pre>`
+        : `<span class="muted">${r.res.checks.length} checks in ${r.res.ms}ms</span>`;
+    const errs = r.errors && r.errors.length ? `<pre>${r.errors.join('\n')}</pre>` : '';
+    return `<tr>
+      <td><b>${r.slug}</b></td>
+      <td class="${r.ok ? 'pass' : 'fail'}">${r.ok ? 'PASS' : 'FAIL'}</td>
+      <td>${detail}${errs}</td>
+    </tr>`;
+  }).join('');
+  const passed = results.filter((r) => r.ok).length;
+  out.innerHTML = `<table><thead><tr><th>game</th><th>result</th><th>detail</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="lead" style="margin-top:14px">
+      <b class="${passed === results.length ? 'pass' : 'fail'}">${passed}/${results.length}</b> games passed their self-test.
+    </p>`;
+}
+
+document.getElementById('run').addEventListener('click', () => {
+  out.innerHTML = '<p class="lead">Running…</p>';
+  runAll();
+});
+
+globalThis.runAll = runAll;
+globalThis.GAMES = GAMES;
+</script>
+</body>
+</html>
