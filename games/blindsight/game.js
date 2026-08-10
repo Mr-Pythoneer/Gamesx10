@@ -735,6 +735,30 @@ registerSelftest('blindsight', (check, log) => {
     doom.dead === true && doom.over === true,
     `dead=${doom.dead} frames=${doomFrames} state=${doom.hunter.state}`);
 
+  // ---- the core risk/reward: loudness decides whether it hears you at all
+  const pathTiles = (sim) => {
+    const pt = tileOf(sim.player.x, sim.player.y);
+    const f = bfsField(sim.map, pt.tx, pt.ty);
+    const ht = tileOf(sim.hunter.x, sim.hunter.y);
+    return f[ht.ty * sim.tw + ht.tx];
+  };
+  const loud = makeSim('HEARME');
+  const euclid = Math.hypot(loud.hunter.x - loud.player.x, loud.hunter.y - loud.player.y);
+  const pathBefore = pathTiles(loud);
+  stepSim(loud, { mx: 0, my: 0, ping: 'wide' }, dt);
+  const alerted = loud.hunter.state;
+  for (let i = 0; i < 600 && !loud.over; i++) stepSim(loud, NOP, dt);
+  const pathAfter = pathTiles(loud);
+  check('a WIDE ping is heard across the maze and the hunter closes in',
+    (alerted === 'hunt' || alerted === 'chase') && (loud.over || pathAfter < pathBefore),
+    `state=${alerted} path ${pathBefore}->${pathAfter} tiles (euclid ${euclid.toFixed(0)}px)`);
+
+  const quiet = makeSim('HEARME');
+  stepSim(quiet, { mx: 0, my: 0, ping: 'narrow' }, dt);
+  check('a NARROW ping from that same distance is too quiet to be heard',
+    quiet.hunter.state === 'patrol' && euclid > 300,
+    `state=${quiet.hunter.state} at ${euclid.toFixed(0)}px`);
+
   // ---- 6. no NaN/Infinity after a long run of movement + pinging
   const longRun = makeSim('LONGRUN');
   const intent = { mx: 0, my: 0, ping: null, sneak: false };

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Nine — Gamesx10</title>
+<meta name="description" content="Nine berths, nine hidden identities, one consistent answer. Three correct at once lock in forever.">
+<link rel="stylesheet" href="../../shared/arcade.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🕯️</text></svg>">
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <a class="back" href="../../index.html">&larr; arcade</a>
+    <h1>The Nine</h1>
+    <span class="tag">deduce the crew</span>
+    <span class="spacer"></span>
+    <span class="keys"><b>click</b> assign <b>⏎</b> confirm <b>1 2 3</b> difficulty <b>N</b> new seed</span>
+  </div>
+  <div class="stage">
+    <canvas id="game"></canvas>
+  </div>
+</div>
+
+<div class="file-warning" id="fileWarn">
+  <div class="card">
+    <h2>Serve me over http</h2>
+    <p>This game uses ES modules, which browsers refuse to load from <code>file://</code>.</p>
+    <p>Run <kbd>python3 -m http.server</kbd> in the repo root and open
+      <kbd>http://localhost:8000/games/the-nine/</kbd> — or just play it on GitHub&nbsp;Pages.</p>
+  </div>
+</div>
+
+<script>
+  if (location.protocol === 'file:') document.getElementById('fileWarn').style.display = 'flex';
+</script>
+<script type="module" src="./game.js"></script>
+</body>
+</html>

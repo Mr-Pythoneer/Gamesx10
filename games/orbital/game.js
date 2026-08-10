@@ -107,7 +107,11 @@ function snapCam(s, g) {
 // ---------------------------------------------------------------- aim mapping
 
 /** Longest useful pull, in screen pixels. Scales with the canvas so any size feels the same. */
-function pullMax(g) { return Math.max(90, Math.min(g.w, g.h) * 0.34); }
+function pullMax(g) { return Math.max(80, Math.min(g.w, g.h) * 0.28); }
+
+/** Press near the probe to grab it; press anywhere else and that point becomes the anchor.
+ *  Tees sit near the left edge, so a probe-only anchor would run the pull off-canvas. */
+function grabRadius(g) { return Math.max(70, Math.min(g.w, g.h) * 0.18); }
 
 function pullToPower(px, g) {
   const t = clamp(px / pullMax(g), 0, 1);
@@ -166,7 +170,7 @@ function init(g) {
     totalStrokes: 0,
     scores: [],                  // strokes for each completed hole
     cam: { cx: 720, cy: 450, scale: 0.5 },
-    drag: { active: false, x: 0, y: 0, pull: 0, angle: 0, power: 0 },
+    drag: { active: false, x: 0, y: 0, ax: 0, ay: 0, grabbed: false, pull: 0, angle: 0, power: 0 },
     preview: null,
     ghosts: [],
     lastTrail: null,
@@ -321,9 +325,13 @@ function update(s, dt, g) {
     if (I.pointerPressed) {
       s.drag.active = true;
       s.lastTone = -1;
+      const near = Math.hypot(probe.x - I.pointer.x, probe.y - I.pointer.y) <= grabRadius(g);
+      s.drag.ax = near ? probe.x : I.pointer.x;
+      s.drag.ay = near ? probe.y : I.pointer.y;
+      s.drag.grabbed = near;
     }
     if (s.drag.active) {
-      const dx = probe.x - I.pointer.x, dy = probe.y - I.pointer.y;
+      const dx = s.drag.ax - I.pointer.x, dy = s.drag.ay - I.pointer.y;
       s.drag.pull = Math.hypot(dx, dy);
       s.drag.angle = Math.atan2(dy, dx);
       s.drag.power = pullToPower(s.drag.pull, g);
@@ -692,20 +700,26 @@ function drawAim(s, ctx, g) {
   const px = 1 / s.cam.scale;
   const start = s.sim.start;
   const w = screenToWorld(s, g, s.drag.x, s.drag.y);
+  const anchor = screenToWorld(s, g, s.drag.ax, s.drag.ay);
   const frac = clamp(s.drag.pull / pullMax(g), 0, 1);
 
   ctx.save();
-  // rubber band back to the cursor
+  // rubber band from the anchor back to the cursor
   ctx.strokeStyle = 'rgba(255,200,87,0.5)';
   ctx.lineWidth = 1.6 * px;
   ctx.setLineDash([6 * px, 6 * px]);
   ctx.beginPath();
-  ctx.moveTo(start.x, start.y);
+  ctx.moveTo(anchor.x, anchor.y);
   ctx.lineTo(w.x, w.y);
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = 'rgba(255,200,87,0.8)';
   ctx.beginPath(); ctx.arc(w.x, w.y, 4 * px + 1, 0, TAU); ctx.fill();
+  if (!s.drag.grabbed) {
+    ctx.strokeStyle = 'rgba(255,200,87,0.35)';
+    ctx.lineWidth = 1.2 * px;
+    ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 7 * px + 2, 0, TAU); ctx.stroke();
+  }
 
   // launch arrow
   const len = 40 + frac * 150;
@@ -736,30 +750,31 @@ function drawAim(s, ctx, g) {
 function drawHud(s, ctx, g) {
   const hole = HOLES[s.holeIndex];
   const num = String(s.holeIndex + 1).padStart(2, '0');
+  const narrow = g.w < 620;
+  const tiny = g.w < 430;
 
   text(ctx, `HOLE ${num}/${HOLE_COUNT}`, 14, 12, { size: 12, color: Palette.accent, weight: 700 });
-  text(ctx, hole.name.toUpperCase(), 14, 28, { size: 11, color: Palette.ink, weight: 600 });
-  text(ctx, `PAR ${hole.par}`, 118, 12, { size: 12, color: Palette.dim, weight: 600 });
+  if (!tiny) text(ctx, hole.name.toUpperCase(), 14, 28, { size: 11, color: Palette.ink, weight: 600 });
 
   const best = s.bestHoles[s.holeIndex];
-  if (best !== null && best !== undefined) {
-    text(ctx, `BEST ${best}`, 118, 28, { size: 10, color: Palette.dim });
+  const hasBest = best !== null && best !== undefined;
+  text(ctx, `PAR ${hole.par}` + (hasBest ? `  ·  BEST ${best}` : ''), g.w / 2, 12,
+    { size: 11, color: Palette.dim, align: 'center', weight: 600 });
+  if (!narrow) {
+    text(ctx, `ROUND PAR ${TOTAL_PAR}` + (s.bestRound !== null ? `  ·  BEST ROUND ${s.bestRound}` : ''),
+      g.w / 2, 28, { size: 10, color: Palette.dim, align: 'center', alpha: 0.65 });
   }
 
   const parSoFar = HOLES.slice(0, s.holeIndex).reduce((n, h) => n + h.par, 0) + hole.par;
   const vs = s.totalStrokes - parSoFar;
   text(ctx, `STROKES ${s.strokes}`, g.w - 14, 12, { size: 12, color: Palette.warm, align: 'right', weight: 700 });
-  text(ctx, `ROUND ${s.totalStrokes} · ${rel(vs)}`, g.w - 14, 28, {
+  text(ctx, `${tiny ? '' : 'ROUND '}${s.totalStrokes} · ${rel(vs)}`, g.w - 14, 28, {
     size: 11, align: 'right',
     color: vs < 0 ? Palette.accent : vs > 0 ? Palette.hot : Palette.dim,
   });
-  if (s.bestRound !== null) {
-    text(ctx, `BEST ROUND ${s.bestRound}`, g.w / 2, 12, { size: 10, color: Palette.dim, align: 'center' });
-  }
-  text(ctx, `TOTAL PAR ${TOTAL_PAR}`, g.w / 2, 27, { size: 10, color: Palette.dim, align: 'center', alpha: 0.7 });
 
   // hole progress pips
-  const pipY = g.h - 17, pipW = Math.min(9, (g.w - 40) / HOLE_COUNT);
+  const pipY = g.h - 17, pipW = Math.max(3, Math.min(9, (g.w - 40) / HOLE_COUNT));
   for (let i = 0; i < HOLE_COUNT; i++) {
     const x = g.w / 2 - (HOLE_COUNT * pipW) / 2 + i * pipW;
     const done = s.scores[i] !== undefined;
@@ -767,28 +782,29 @@ function drawHud(s, ctx, g) {
     ctx.fillStyle = i === s.holeIndex ? Palette.warm
       : done ? (s.scores[i] <= HOLES[i].par ? Palette.accent : Palette.dim)
       : Palette.grid;
-    ctx.fillRect(x, pipY, pipW - 2, 4);
+    ctx.fillRect(x, pipY, Math.max(2, pipW - 2), 4);
   }
   ctx.globalAlpha = 1;
 
+  const lineY = g.h - 40;
   if (s.messageT > 0 && s.message) {
     const a = clamp(s.messageT / 0.5, 0, 1);
-    text(ctx, s.message, g.w / 2, g.h - 40, { size: 13, color: Palette.hot, align: 'center', weight: 700, alpha: a });
+    text(ctx, s.message, g.w / 2, lineY, { size: 13, color: Palette.hot, align: 'center', weight: 700, alpha: a });
   } else if (s.hintT > 0 && s.phase === 'aim') {
     const a = clamp(s.hintT / 1.0, 0, 1);
-    text(ctx, HOLES[s.holeIndex].hint, g.w / 2, g.h - 40, { size: 11, color: Palette.dim, align: 'center', alpha: a });
+    text(ctx, hole.hint, g.w / 2, lineY, { size: tiny ? 9 : 11, color: Palette.dim, align: 'center', alpha: a });
   } else if (s.phase === 'aim' && !s.drag.active) {
     const p = 0.5 + 0.5 * Math.sin(s.t * 2.6);
-    text(ctx, 'DRAG BACK FROM THE PROBE TO LAUNCH', g.w / 2, g.h - 40, {
+    text(ctx, 'DRAG BACK AND RELEASE TO LAUNCH', g.w / 2, lineY, {
       size: 11, color: Palette.dim, align: 'center', alpha: 0.35 + p * 0.35,
     });
   } else if (s.phase === 'fly') {
-    text(ctx, 'HOLD SPACE TO FAST-FORWARD', g.w / 2, g.h - 40, { size: 10, color: Palette.dim, align: 'center', alpha: 0.5 });
+    text(ctx, 'HOLD SPACE TO FAST-FORWARD', g.w / 2, lineY, { size: 10, color: Palette.dim, align: 'center', alpha: 0.5 });
   }
 
   if (s.drag.active && s.drag.pull > 10) {
     const frac = clamp(s.drag.pull / pullMax(g), 0, 1);
-    text(ctx, `${Math.round(frac * 100)}% POWER`, g.w / 2, g.h - 58, {
+    text(ctx, `${Math.round(frac * 100)}% POWER`, g.w / 2, lineY - 18, {
       size: 12, color: frac > 0.92 ? Palette.hot : Palette.warm, align: 'center', weight: 700,
     });
   }
@@ -809,25 +825,40 @@ function panel(ctx, x, y, w, h) {
 function drawIntro(s, ctx, g) {
   ctx.fillStyle = 'rgba(7,8,13,0.88)';
   ctx.fillRect(0, 0, g.w, g.h);
-  const cx = g.w / 2, cy = g.h / 2;
-  const w = Math.min(560, g.w - 40), h = Math.min(320, g.h - 40);
-  panel(ctx, cx - w / 2, cy - h / 2, w, h);
+  const cx = g.w / 2;
+  const w = Math.min(560, g.w - 28);
+  const roomy = g.h >= 430, mid = g.h >= 320;
 
-  const top = cy - h / 2;
-  text(ctx, 'ORBITAL', cx, top + 34, { size: Math.min(44, w * 0.1), color: Palette.accent, align: 'center', weight: 700 });
-  text(ctx, 'N-BODY GRAVITY GOLF', cx, top + 82, { size: 12, color: Palette.accent2, align: 'center', weight: 600 });
-  text(ctx, 'Launch a probe. Real gravity does the rest.', cx, top + 112, { size: 13, color: Palette.ink, align: 'center' });
-  text(ctx, 'Slingshot round planets, dodge black holes, dive through', cx, top + 138, { size: 11, color: Palette.dim, align: 'center' });
-  text(ctx, 'wormholes. Sink it in the ring in as few strokes as you can.', cx, top + 156, { size: 11, color: Palette.dim, align: 'center' });
+  const L = [];
+  L.push({ t: 'ORBITAL', size: Math.min(42, w * 0.11), color: Palette.accent, weight: 700, gap: 50 });
+  L.push({ t: 'N-BODY GRAVITY GOLF', size: 11, color: Palette.accent2, weight: 600, gap: 26 });
+  L.push({ t: 'Launch a probe. Real gravity does the rest.', size: 12, color: Palette.ink, gap: mid ? 26 : 20 });
+  if (roomy) {
+    L.push({ t: 'Slingshot round planets, dodge black holes,', size: 11, color: Palette.dim, gap: 17 });
+    L.push({ t: 'dive through wormholes. Sink it under par.', size: 11, color: Palette.dim, gap: 30 });
+  } else if (mid) {
+    L.push({ t: 'Slingshot, dodge, warp. Sink it under par.', size: 10, color: Palette.dim, gap: 26 });
+  }
+  L.push({ t: 'DRAG back from the probe, release to fire', size: 11, color: Palette.ink, gap: mid ? 19 : 16 });
+  if (mid) L.push({ t: 'R reset hole  ·  SPACE fast-forward', size: 10, color: Palette.dim, gap: 24 });
+  L.push({ t: `${HOLE_COUNT} HOLES  ·  TOTAL PAR ${TOTAL_PAR}`, size: 11, color: Palette.warm, weight: 600, gap: 32 });
+  L.push({ t: 'DRAG TO LAUNCH', size: 15, color: Palette.warm, weight: 700, pulse: true, gap: 0 });
 
-  text(ctx, 'DRAG back from the probe, release to fire', cx, top + 192, { size: 11, color: Palette.ink, align: 'center' });
-  text(ctx, 'R reset hole  ·  SPACE fast-forward a flight', cx, top + 212, { size: 11, color: Palette.dim, align: 'center' });
-  text(ctx, `${HOLE_COUNT} HOLES  ·  TOTAL PAR ${TOTAL_PAR}`, cx, top + 240, { size: 11, color: Palette.warm, align: 'center', weight: 600 });
+  let contentH = L[L.length - 1].size;
+  for (const l of L) contentH += l.gap;
+  const h = Math.min(g.h - 16, contentH + 42);
+  const top = g.h / 2 - h / 2;
+  panel(ctx, cx - w / 2, top, w, h);
 
-  const p = 0.5 + 0.5 * Math.sin(s.t * 3);
-  text(ctx, 'DRAG TO LAUNCH', cx, top + h - 34, {
-    size: 15, color: Palette.warm, align: 'center', weight: 700, alpha: 0.35 + p * 0.65,
-  });
+  const pulse = 0.5 + 0.5 * Math.sin(s.t * 3);
+  let y = top + 21;
+  for (const l of L) {
+    text(ctx, l.t, cx, y, {
+      size: l.size, color: l.color, align: 'center', weight: l.weight || 500,
+      alpha: l.pulse ? 0.35 + pulse * 0.65 : 1,
+    });
+    y += l.gap;
+  }
 }
 
 function drawBanner(s, ctx, g) {
@@ -846,39 +877,41 @@ function drawRound(s, ctx, g) {
   ctx.fillStyle = 'rgba(7,8,13,0.9)';
   ctx.fillRect(0, 0, g.w, g.h);
   const cx = g.w / 2;
-  const w = Math.min(620, g.w - 40), h = Math.min(400, g.h - 30);
+  const w = Math.min(620, g.w - 28);
+  const full = g.h >= 380 && g.w >= 470;
+  const h = Math.min(g.h - 16, full ? 400 : 200);
   const top = g.h / 2 - h / 2;
   panel(ctx, cx - w / 2, top, w, h);
 
   const vs = s.totalStrokes - TOTAL_PAR;
-  const m = medalFor(s.totalStrokes, TOTAL_PAR);
-  text(ctx, 'ROUND COMPLETE', cx, top + 26, { size: 22, color: Palette.accent, align: 'center', weight: 700 });
-  text(ctx, `${s.totalStrokes} STROKES  ·  PAR ${TOTAL_PAR}  ·  ${rel(vs)}`, cx, top + 60, {
-    size: 15, color: vs <= 0 ? Palette.accent : Palette.warm, align: 'center', weight: 600,
+  text(ctx, 'ROUND COMPLETE', cx, top + 24, { size: Math.min(22, w * 0.05), color: Palette.accent, align: 'center', weight: 700 });
+  text(ctx, `${s.totalStrokes} STROKES  ·  PAR ${TOTAL_PAR}  ·  ${rel(vs)}`, cx, top + 58, {
+    size: Math.min(15, w * 0.036), color: vs <= 0 ? Palette.accent : Palette.warm, align: 'center', weight: 600,
   });
-  text(ctx, s.roundBest ? 'NEW BEST ROUND' : `BEST ROUND ${s.bestRound}`, cx, top + 86, {
+  text(ctx, s.roundBest ? 'NEW BEST ROUND' : `BEST ROUND ${s.bestRound}`, cx, top + 84, {
     size: 11, color: s.roundBest ? Palette.warm : Palette.dim, align: 'center', weight: 600,
   });
 
-  // scorecard: two rows of nine
-  const cardTop = top + 118;
-  const colW = (w - 60) / 9;
-  for (let row = 0; row < 2; row++) {
-    const y = cardTop + row * 74;
-    for (let i = 0; i < 9; i++) {
-      const idx = row * 9 + i;
-      const x = cx - w / 2 + 30 + i * colW + colW / 2;
-      const sc = s.scores[idx];
-      text(ctx, String(idx + 1), x, y, { size: 10, color: Palette.dim, align: 'center' });
-      text(ctx, String(HOLES[idx].par), x, y + 16, { size: 10, color: Palette.grid === '' ? Palette.dim : '#5a657c', align: 'center' });
-      const d = sc === undefined ? 0 : sc - HOLES[idx].par;
-      text(ctx, sc === undefined ? '-' : String(sc), x, y + 34, {
-        size: 15, align: 'center', weight: 700,
-        color: sc === undefined ? Palette.dim : d < 0 ? Palette.accent : d === 0 ? Palette.ink : Palette.hot,
-      });
+  if (full) {
+    const cardTop = top + 118;
+    const colW = (w - 60) / 9;
+    for (let row = 0; row < 2; row++) {
+      const y = cardTop + row * 74;
+      for (let i = 0; i < 9; i++) {
+        const idx = row * 9 + i;
+        const x = cx - w / 2 + 30 + i * colW + colW / 2;
+        const sc = s.scores[idx];
+        text(ctx, String(idx + 1), x, y, { size: 10, color: Palette.dim, align: 'center' });
+        text(ctx, String(HOLES[idx].par), x, y + 16, { size: 10, color: '#5a657c', align: 'center' });
+        const d = sc === undefined ? 0 : sc - HOLES[idx].par;
+        text(ctx, sc === undefined ? '-' : String(sc), x, y + 34, {
+          size: 15, align: 'center', weight: 700,
+          color: sc === undefined ? Palette.dim : d < 0 ? Palette.accent : d === 0 ? Palette.ink : Palette.hot,
+        });
+      }
     }
+    text(ctx, 'HOLE / PAR / SCORE', cx, cardTop + 152, { size: 9, color: Palette.dim, align: 'center', alpha: 0.6 });
   }
-  text(ctx, 'HOLE / PAR / SCORE', cx, cardTop + 152, { size: 9, color: Palette.dim, align: 'center', alpha: 0.6 });
 
   const p = 0.5 + 0.5 * Math.sin(s.t * 3);
   text(ctx, 'ENTER to play another round', cx, top + h - 26, {
@@ -986,12 +1019,12 @@ registerSelftest('orbital', (check, log) => {
   const st = game.state;
   const teeScreen = worldToScreen(st, game, st.sim.start.x, st.sim.start.y);
   const pullPx = powerToPull(400, game);
-  game.input.pointDown(teeScreen.x + pullPx * 0.7071, teeScreen.y + pullPx * 0.7071); // pull down-right
+  game.input.pointDown(teeScreen.x, teeScreen.y);                                   // grab the probe
+  game.step(1);
+  game.input.pointTo(teeScreen.x + pullPx * 0.7071, teeScreen.y + pullPx * 0.7071); // pull down-right
   game.step(1);
   const draggingPreview = !!game.state.preview;
-  game.input.pointTo(teeScreen.x + pullPx * 0.7071, teeScreen.y + pullPx * 0.7071);
-  game.step(1);
-  game.input.pointUp();
+  game.input.pointUp(teeScreen.x + pullPx * 0.7071, teeScreen.y + pullPx * 0.7071);
   game.step(1);
   const v0 = Math.hypot(game.state.sim.probe.vx, game.state.sim.probe.vy);
   check('injected pointer drag launches the probe with real velocity',
@@ -1012,7 +1045,9 @@ registerSelftest('orbital', (check, log) => {
   const tee = worldToScreen(game.state, game, game.state.sim.start.x, game.state.sim.start.y);
   const pl = powerToPull(sol.p, game);
   const px0 = tee.x - Math.cos(sol.a) * pl, py0 = tee.y - Math.sin(sol.a) * pl;
-  game.input.pointDown(px0, py0);
+  game.input.pointDown(tee.x, tee.y);
+  game.step(1);
+  game.input.pointTo(px0, py0);
   game.step(1);
   game.input.pointUp(px0, py0);
   game.step(1);
@@ -1045,7 +1080,9 @@ registerSelftest('orbital', (check, log) => {
   snapCam(game.state, game);
   const tee2 = worldToScreen(game.state, game, game.state.sim.start.x, game.state.sim.start.y);
   const pl2 = powerToPull(MAX_POWER, game);
-  game.input.pointDown(tee2.x - pl2, tee2.y);   // dead ahead into the planet
+  game.input.pointDown(tee2.x, tee2.y);
+  game.step(1);
+  game.input.pointTo(tee2.x - pl2, tee2.y);    // pull left => fire dead ahead into the planet
   game.step(1);
   game.input.pointUp(tee2.x - pl2, tee2.y);
   game.step(1);

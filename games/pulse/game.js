@@ -23,7 +23,7 @@ import { compose, verifyChart, PHYS } from './compose.js';
 import { makeSim, stepSim, autoRun, idleRun, playerHeight } from './sim.js';
 import { Sequencer } from './synth.js';
 
-const { SPIKE_H, CEIL_BOTTOM, STAND_H, SLIDE_H, PLAYER_W_T, LIVES } = PHYS;
+const { SPIKE_H, CEIL_BOTTOM, PLAYER_W_T, LIVES } = PHYS;
 
 const SEED_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const START_SEED = 'PULSE1';
@@ -35,9 +35,9 @@ function layout(g) {
   const pxPerSec = clamp(g.w / 3.1, 150, 560);
   const vScale = clamp((groundY - 44) / 230, 0.55, 3.4);
   const playerX = Math.round(g.w * 0.27);
-  const bandTop = Math.min(g.h * 0.12, groundY - SPIKE_H * vScale - 90);
-  const bandBot = Math.max(bandTop + 24, groundY - 150 * vScale * 0.55);
-  return { groundY, pxPerSec, vScale, playerX, bandTop, bandBot, u: clamp(Math.min(g.w / 960, g.h / 600), 0.55, 1.7) };
+  const bandTop = clamp(Math.min(g.h * 0.12, groundY - SPIKE_H * vScale - 90), 8, Math.max(8, groundY - 60));
+  const bandBot = clamp(groundY - 150 * vScale * 0.55, bandTop + 24, groundY - 20);
+  return { groundY, pxPerSec, vScale, playerX, bandTop, bandBot, u: clamp(Math.min(g.w / 960, g.h / 600), 0.55, 1.35) };
 }
 
 function lowerBound(arr, t) {
@@ -68,6 +68,7 @@ function init(g) {
     leadLo: lo, leadHi: hi,
     seedEdit: false,
     seedBuf: '',
+    introT: 0,
     copied: 0,
     hint: 0,
     overT: 0,
@@ -364,9 +365,10 @@ function drawTrack(s, ctx, g, L) {
       ctx.lineWidth = 1;
     } else {
       const yb = Y(CEIL_BOTTOM);
+      const cTop = Math.max(2, L.bandTop - 14);
       ctx.globalAlpha = done ? 0.28 : 0.7 + near * 0.3;
       ctx.fillStyle = Palette.violet;
-      roundRect(ctx, cx - vw / 2, L.bandBot + 8, vw, yb - L.bandBot - 8, 4);
+      roundRect(ctx, cx - vw / 2, cTop, vw, Math.max(8, yb - cTop), 4);
       ctx.fill();
       ctx.globalAlpha = 0.3 * near;
       ctx.fillStyle = Palette.ink;
@@ -488,7 +490,7 @@ function drawHud(s, ctx, g, L) {
     const a = clamp(1 - sim.judgeAge / 0.5, 0, 1);
     const rise = (1 - a) * 26;
     text(ctx, sim.lastJudge === 'perfect' ? 'PERFECT' : 'GOOD',
-      L.playerX, L.groundY - 120 - rise, {
+      L.playerX, L.groundY - (86 + 44 * u) - rise, {
         size: (sim.lastJudge === 'perfect' ? 18 : 14) * u,
         color: sim.lastJudge === 'perfect' ? Palette.accent : Palette.accent2,
         align: 'center', weight: 700, alpha: a,
@@ -526,8 +528,8 @@ function drawOverlays(s, ctx, g, L) {
   const sim = s.sim;
 
   if (s.phase === 'intro') {
-    panel(ctx, g, Math.min(g.w - 32, 560), Math.min(g.h - 40, 340));
-    let y = g.h / 2 - 132;
+    panel(ctx, g, Math.min(g.w - 24, 580 * u), Math.min(g.h - 24, 370 * u));
+    let y = g.h / 2 - 152 * u;
     text(ctx, 'PULSE', cx, y, { size: 40 * u, color: Palette.accent, align: 'center', weight: 700 });
     y += 52 * u;
     text(ctx, 'The seed writes the song. The song writes the level.', cx, y, { size: 13 * u, color: Palette.ink, align: 'center' });
@@ -547,15 +549,15 @@ function drawOverlays(s, ctx, g, L) {
     text(ctx, 'S type a seed   ·   N re-roll   ·   C copy   ·   R restart   ·   M mute',
       cx, y, { size: 10 * u, color: Palette.dim, align: 'center', alpha: 0.85 });
     const p = 0.5 + 0.5 * Math.sin(s.introT * 3);
-    text(ctx, 'PRESS SPACE', cx, g.h / 2 + 122, {
+    text(ctx, 'PRESS SPACE', cx, g.h / 2 + 136 * u, {
       size: 14 * u, color: Palette.warm, align: 'center', weight: 700, alpha: 0.35 + p * 0.65,
     });
   }
 
   if (s.phase === 'over' || s.phase === 'win') {
     const won = s.phase === 'win';
-    panel(ctx, g, Math.min(g.w - 32, 480), Math.min(g.h - 40, 268));
-    let y = g.h / 2 - 100;
+    panel(ctx, g, Math.min(g.w - 24, 500 * u), Math.min(g.h - 24, 296 * u));
+    let y = g.h / 2 - 118 * u;
     text(ctx, won ? 'TRACK CLEARED' : 'RUN ENDED', cx, y, {
       size: 26 * u, color: won ? Palette.accent : Palette.hot, align: 'center', weight: 700,
     });
@@ -578,11 +580,11 @@ function drawOverlays(s, ctx, g, L) {
   }
 
   if (s.seedEdit) {
-    panel(ctx, g, Math.min(g.w - 32, 420), 170);
-    text(ctx, 'SEED', cx, g.h / 2 - 56, { size: 12 * u, color: Palette.dim, align: 'center', weight: 700 });
+    panel(ctx, g, Math.min(g.w - 24, 440 * u), Math.min(g.h - 24, 180 * u));
+    text(ctx, 'SEED', cx, g.h / 2 - 60 * u, { size: 12 * u, color: Palette.dim, align: 'center', weight: 700 });
     const shown = s.seedBuf + (Math.floor(s.introT * 2.6) % 2 ? '_' : ' ');
-    text(ctx, shown || '_', cx, g.h / 2 - 22, { size: 30 * u, color: Palette.accent, align: 'center', weight: 700 });
-    text(ctx, 'type or paste · ENTER to play · ESC to cancel', cx, g.h / 2 + 28,
+    text(ctx, shown || '_', cx, g.h / 2 - 26 * u, { size: 30 * u, color: Palette.accent, align: 'center', weight: 700 });
+    text(ctx, 'type or paste · ENTER to play · ESC to cancel', cx, g.h / 2 + 32 * u,
       { size: 11 * u, color: Palette.dim, align: 'center' });
   }
 }
@@ -643,6 +645,7 @@ const TEST_SEEDS = (() => {
 
 registerSelftest('pulse', (check, log) => {
   const dt = 1 / 60;
+  seq.stop();                   // if a human was mid-song, run the test in silence
   const audioBefore = Sound.ctx;
 
   // 1 — the composer is deterministic

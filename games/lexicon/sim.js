@@ -1,6 +1,6 @@
 // Lexicon — pure simulation. No DOM, no Math.random, no Date.now.
 //
-// Everything the game IS lives here: verlet tile physics, the touching-tiles
+// Everything the game IS lives here: impulse-based tile physics, the touching-tiles
 // selection graph, word validation, scoring and chains, spawn escalation, the
 // overflow lose condition, and the hint search. game.js only draws it and feeds
 // it an intent. The self-test and the headless node checks call the exact same
@@ -39,7 +39,7 @@ const POS_RELAX = 0.5;
 const SQUASH_V = 150;
 const SLEEP_V = 10.0;             // world units/sec (0.17 px/frame — invisible)
 const SLEEP_FRAMES = 16;
-const WAKE_OVERLAP = 0.6;
+const WAKE_OVERLAP = 3.5;
 
 // ---------------------------------------------------------------- letters
 

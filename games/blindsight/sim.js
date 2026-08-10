@@ -513,10 +513,16 @@ export function stepSim(sim, intent = {}, dt = 1 / 60) {
     }
   }
 
-  // --- dread (drives the heartbeat in the audio layer)
+  // --- dread (drives the heartbeat in the audio layer and the red screen wash)
+  // Falloff must scale with the map's own size, not a fixed constant: a hardcoded
+  // radius here was miscalibrated against these maps' actual coordinate scale, so
+  // proximity stayed near 1.0 (and the screen stayed red) at almost any distance,
+  // including edge-to-edge — defeating "the screen reddens only when it's actually near."
   if (sim.hunter) {
     const hd = Math.hypot(sim.hunter.x - p.x, sim.hunter.y - p.y);
-    const prox = clamp(1 - hd / 300, 0, 1);
+    const mapDiag = Math.hypot(sim.map.tw * TILE, sim.map.th * TILE);
+    const dreadRadius = mapDiag * 0.32;
+    const prox = clamp(1 - hd / dreadRadius, 0, 1);
     sim.dread = clamp(prox * (0.55 + 0.45 * sim.hunter.alert), 0, 1);
   }
 
