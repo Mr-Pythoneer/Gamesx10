@@ -1,4 +1,4 @@
-// Orbital — 18 hand-authored holes.
+// Orbital — 22 hand-authored holes.
 //
 // Coordinates are world units; every hole shares a 1440x900 field so the camera maths
 // stays simple, but each declares its own bounds so the out-of-bounds rule is explicit.
@@ -280,6 +280,68 @@ export const HOLES = [
       { type: 'moon', r: 28, orbit: { cx: 980, cy: 660, r: 190, w: -1.2, phase: 1.2 } },
     ],
     solution: { a: 6.14355896702004, p: 477.36 },
+  },
+
+  {
+    name: 'Threading the Eye',
+    par: 4,
+    hint: 'A blackhole guards the direct line. The gap beside it is real, but thin.',
+    bounds: { x: 0, y: 0, w: 1440, h: 900 },
+    start: { x: 140, y: 450 },
+    goal: { x: 1300, y: 450, r: 30 },
+    bodies: [
+      { type: 'blackhole', x: 720, y: 420, r: 24 },
+      { type: 'planet', x: 720, y: 700, r: 46 },
+    ],
+    solution: { a: 5.869066275570023, p: 472.0300000000001 },
+  },
+
+  {
+    name: 'Three-Body',
+    par: 5,
+    hint: 'All three planets pull at once. Nothing here is a straight line.',
+    bounds: { x: 0, y: 0, w: 1440, h: 900 },
+    start: { x: 150, y: 780 },
+    goal: { x: 1280, y: 160, r: 32 },
+    bodies: [
+      { type: 'planet', x: 520, y: 500, r: 54 },
+      { type: 'planet', x: 900, y: 300, r: 50 },
+      { type: 'planet', x: 1100, y: 650, r: 44 },
+    ],
+    solution: { a: 5.969026041820607, p: 477.36 },
+  },
+
+  {
+    name: 'Relay',
+    par: 5,
+    hint: 'Wormhole in, orbiting moon out. Time it or eat the planet.',
+    bounds: { x: 0, y: 0, w: 1440, h: 900 },
+    start: { x: 140, y: 200 },
+    goal: { x: 1290, y: 800, r: 32 },
+    bodies: [
+      { type: 'wormhole', x: 560, y: 220, r: 30, link: 1 },
+      { type: 'wormhole', x: 980, y: 620, r: 30, link: 0 },
+      { type: 'planet', x: 1120, y: 300, r: 60 },
+      { type: 'moon', r: 26, orbit: { cx: 700, cy: 700, r: 200, w: 1.3, phase: 0 } },
+    ],
+    solution: { a: 0.5426387310746006, p: 280.15 },
+  },
+
+  {
+    name: 'Last Light',
+    par: 6,
+    hint: 'Everything you have learned, in one field.',
+    bounds: { x: 0, y: 0, w: 1440, h: 900 },
+    start: { x: 130, y: 450 },
+    goal: { x: 1310, y: 450, r: 34 },
+    bodies: [
+      { type: 'repulsor', x: 420, y: 450, r: 40 },
+      { type: 'blackhole', x: 780, y: 250, r: 22 },
+      { type: 'wormhole', x: 760, y: 650, r: 28, link: 1 },
+      { type: 'wormhole', x: 1080, y: 300, r: 28, link: 0 },
+      { type: 'moon', r: 26, orbit: { cx: 900, cy: 600, r: 210, w: -0.9, phase: 1.0 } },
+    ],
+    solution: { a: 5.883346242177248, p: 200.20000000000002 },
   },
 ];
 

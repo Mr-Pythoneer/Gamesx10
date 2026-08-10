@@ -169,6 +169,14 @@ export const CHARACTERS = [
     id: 'thorn', name: 'Thorn', desc: 'Tanky brawler. Opens with Static Aura, +25% max HP, -10% speed.',
     startWeapon: 'aura', bias: { speedMul: 0.9, hpMul: 1.25 }, unlock: { kind: 'wins', amount: 1 },
   },
+  {
+    id: 'vane', name: 'Vane', desc: 'Glass cannon. Opens with Lance, +20% damage, -20% max HP.',
+    startWeapon: 'lance', bias: { hpMul: 0.8 }, unlock: { kind: 'gold', amount: 500 },
+  },
+  {
+    id: 'coil', name: 'Coil', desc: 'Crowd control specialist. Opens with Chain Lightning, +12% max HP, -8% speed.',
+    startWeapon: 'chain', bias: { speedMul: 0.92, hpMul: 1.12 }, unlock: { kind: 'wins', amount: 3 },
+  },
 ];
 
 // ---------------------------------------------------------------- spawn director

@@ -1129,7 +1129,7 @@ registerSelftest('orbital', (check, log) => {
     }
     if (h.start.x < h.bounds.x || h.start.x > h.bounds.x + h.bounds.w) { structureOk = false; problems.push(`${i}:tee-oob`); }
   }
-  check(`all ${HOLE_COUNT} holes parse with a clear tee + goal`, structureOk && HOLE_COUNT === 18,
+  check(`all ${HOLE_COUNT} holes parse with a clear tee + goal`, structureOk && HOLE_COUNT >= 18,
     problems.slice(0, 4).join(',') || `${HOLE_COUNT} holes, total par ${TOTAL_PAR}`);
 
   // ---- 2. the probe responds to injected input: a LIVE drag produces a real launch
