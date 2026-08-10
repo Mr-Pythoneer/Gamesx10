@@ -9,6 +9,7 @@
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
+  Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 
@@ -437,172 +438,507 @@ function update(s, dt, g) {
 
 // ---------------------------------------------------------------- render
 
-function panelRects(g, n) {
-  const pad = 10;
-  const gap = 8;
-  const topPad = 34, botPad = 26;
-  const availW = g.w - pad * 2 - gap * (n - 1);
-  const availH = g.h - topPad - botPad;
-  const pw = availW / n;
+const HEX6 = /^#([0-9a-f]{6})$/i;
+
+/** Alpha variant of a palette colour. The arcade's hue set stays fixed. */
+function withAlpha(hex, a) {
+  const m = HEX6.exec(String(hex));
+  if (!m) return String(hex);
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+/** One hue per transform: upright = warm, mirrored = blue, inverted = violet. */
+function worldTint(w) {
+  return w.flipY ? Palette.violet : (w.flipX ? Palette.accent2 : Palette.warm);
+}
+
+function worldLabel(w, short) {
+  return (w.flipX ? (short ? 'MIRROR' : 'MIRRORED') : 'NORMAL')
+       + (w.flipY ? (short ? ' INV' : ' · INVERTED') : '');
+}
+
+// Layout maths never calls measureText, so the HUD lands identically in every engine
+// (and in the headless gate). Mono advance is a fixed fraction of the font size.
+const monoW = (str, size) => String(str).length * size * 0.62;
+const capW = (str, size = Type.label) => String(str).length * size * 0.74;
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/** Uppercase, letterspaced, dim — the treatment stat() gives its labels. */
+function capLabel(ctx, str, x, y, { size = Type.label, color = Palette.dim, align = 'left', alpha = 1 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `600 ${size}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  const prev = ctx.letterSpacing;
+  try { ctx.letterSpacing = '0.14em'; } catch { /* older engines */ }
+  ctx.fillText(String(str).toUpperCase(), x, y);
+  try { ctx.letterSpacing = prev || '0px'; } catch { /* ignore */ }
+  ctx.restore();
+}
+
+/** Stubby arrow used by the per-panel transform badges. */
+function arrow(ctx, cx, cy, dx, dy, len, color, alpha = 0.85) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const tx = cx + dx * len, ty = cy + dy * len;
+  const px = -dy, py = dx;
+  ctx.beginPath();
+  ctx.moveTo(cx - dx * len, cy - dy * len);
+  ctx.lineTo(tx, ty);
+  ctx.moveTo(tx - dx * 3.4 + px * 2.6, ty - dy * 3.4 + py * 2.6);
+  ctx.lineTo(tx, ty);
+  ctx.lineTo(tx - dx * 3.4 - px * 2.6, ty - dy * 3.4 - py * 2.6);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Which way this world hears "right", and which way it falls. */
+function transformBadges(ctx, w, rightX, cy, tint) {
+  // gravity: arrow toward the floor, with the floor drawn as a bar at the tip
+  const gDir = w.flipY ? -1 : 1;
+  const gx = rightX - 5;
+  arrow(ctx, gx, cy - gDir * 1.5, 0, gDir, 4.5, tint, 0.9);
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = tint;
+  ctx.fillRect(gx - 5, cy + gDir * 7 - (gDir > 0 ? 0 : 1.2), 10, 1.2);
+  ctx.restore();
+  // input: arrow toward whatever this world does when you press right
+  arrow(ctx, rightX - 22, cy, w.flipX ? -1 : 1, 0, 5.5, tint, 0.9);
+}
+
+/**
+ * Grid layout that maximises how large each world can be drawn, with a bias toward a
+ * single row so mirrored pairs sit side by side whenever there is room for them.
+ */
+function panelRects(g, n, worldW, worldH) {
+  const padX = 14, top = HUD_H + 14, padBot = 34, gap = 12;
+  const availW = Math.max(80, g.w - padX * 2);
+  const availH = Math.max(80, g.h - top - padBot);
+  const headerFor = (h) => Math.max(20, Math.min(30, h * 0.14));
+
+  let best = null;
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const cw = (availW - gap * (cols - 1)) / cols;
+    const ch = (availH - gap * (rows - 1)) / rows;
+    if (cw < 70 || ch < 74) continue;
+    const scale = Math.min((cw - 20) / worldW, (ch - headerFor(ch) - 12) / worldH);
+    const score = scale * (rows === 1 && scale >= 1.2 ? 1.5 : 1);
+    if (!best || score > best.score) best = { cols, rows, cw, ch, score };
+  }
+  if (!best) {
+    best = { cols: n, rows: 1, cw: Math.max(40, (availW - gap * (n - 1)) / n), ch: availH, score: 0 };
+  }
+
   const out = [];
-  for (let i = 0; i < n; i++) out.push({ x: pad + i * (pw + gap), y: topPad, w: pw, h: availH });
+  for (let i = 0; i < n; i++) {
+    const r = Math.floor(i / best.cols);
+    const c = i % best.cols;
+    const inRow = Math.min(best.cols, n - r * best.cols);
+    const rowW = inRow * best.cw + (inRow - 1) * gap;
+    out.push({
+      x: padX + (availW - rowW) / 2 + c * (best.cw + gap),
+      y: top + r * (best.ch + gap),
+      w: best.cw, h: best.ch, row: r, col: c,
+    });
+  }
   return out;
 }
 
-function drawWorld(ctx, w, ch, rect, s, idx) {
-  const scale = Math.min(rect.w / (w.cols * TILE), rect.h / (w.rows * TILE));
-  const ox = rect.x + (rect.w - w.cols * TILE * scale) / 2;
-  const oy = rect.y + (rect.h - w.rows * TILE * scale) / 2;
+/** The reflection axis between two bound worlds. */
+function drawSeam(ctx, a, b, vertical) {
+  ctx.save();
+  if (vertical) {
+    const x = (a.x + a.w + b.x) / 2;
+    const y0 = Math.min(a.y, b.y) + 8, y1 = Math.max(a.y + a.h, b.y + b.h) - 8;
+    if (y1 > y0) {
+      const grad = ctx.createLinearGradient(0, y0, 0, y1);
+      grad.addColorStop(0, withAlpha(Palette.accent, 0));
+      grad.addColorStop(0.5, withAlpha(Palette.accent, 0.42));
+      grad.addColorStop(1, withAlpha(Palette.accent, 0));
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(Math.round(x) + 0.5, y0);
+      ctx.lineTo(Math.round(x) + 0.5, y1);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const my = (y0 + y1) / 2;
+      withGlow(ctx, Palette.accent, 10, () => {
+        ctx.fillStyle = withAlpha(Palette.accent, 0.8);
+        ctx.beginPath();
+        ctx.moveTo(x, my - 5); ctx.lineTo(x + 3.5, my);
+        ctx.lineTo(x, my + 5); ctx.lineTo(x - 3.5, my);
+        ctx.closePath();
+        ctx.fill();
+      });
+    }
+  } else {
+    const y = (a.y + a.h + b.y) / 2;
+    const x0 = Math.min(a.x, b.x) + 8, x1 = Math.max(a.x + a.w, b.x + b.w) - 8;
+    if (x1 > x0) {
+      const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+      grad.addColorStop(0, withAlpha(Palette.accent, 0));
+      grad.addColorStop(0.5, withAlpha(Palette.accent, 0.42));
+      grad.addColorStop(1, withAlpha(Palette.accent, 0));
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(x0, Math.round(y) + 0.5);
+      ctx.lineTo(x1, Math.round(y) + 0.5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const mx = (x0 + x1) / 2;
+      withGlow(ctx, Palette.accent, 10, () => {
+        ctx.fillStyle = withAlpha(Palette.accent, 0.8);
+        ctx.beginPath();
+        ctx.moveTo(mx - 5, y); ctx.lineTo(mx, y - 3.5);
+        ctx.lineTo(mx + 5, y); ctx.lineTo(mx, y + 3.5);
+        ctx.closePath();
+        ctx.fill();
+      });
+    }
+  }
+  ctx.restore();
+}
+
+function drawWorld(ctx, w, ch, rect, t, idx) {
+  const base = worldTint(w);
+  const frame = ch.won ? Palette.accent : (ch.dead ? Palette.hot : base);
+  const headerH = Math.max(20, Math.min(30, rect.h * 0.14));
+  const W = w.cols * TILE, H = w.rows * TILE;
+
+  // ---- frame
+  panel(ctx, rect.x, rect.y, rect.w, rect.h, {
+    fill: 'rgba(13,16,24,0.92)',
+    border: ch.won || ch.dead ? withAlpha(frame, 0.5) : Palette.grid,
+    radius: 8,
+    glowColor: ch.won ? Palette.accent : (ch.dead ? Palette.hot : null),
+    glowBlur: 18,
+  });
+
+  // identity tab along the top edge, brightest on the side this world calls forward
+  ctx.save();
+  roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 8);
+  ctx.clip();
+  const tab = ctx.createLinearGradient(w.flipX ? rect.x + rect.w : rect.x, 0, w.flipX ? rect.x : rect.x + rect.w, 0);
+  tab.addColorStop(0, withAlpha(base, 0.1));
+  tab.addColorStop(1, withAlpha(base, 0.85));
+  ctx.fillStyle = tab;
+  ctx.fillRect(rect.x, rect.y, rect.w, 2);
+  ctx.restore();
+
+  // ---- header
+  const cy = rect.y + headerH / 2;
+  const statusX = rect.x + rect.w - 16;
+  if (ch.won || ch.dead) {
+    orb(ctx, statusX, cy, 3.4, frame, { glow: 1.1, rim: false });
+  } else {
+    ctx.save();
+    ctx.strokeStyle = withAlpha(base, 0.5);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(statusX, cy, 3.4, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+  const badgeRight = statusX - 12;
+  transformBadges(ctx, w, badgeRight, cy, base);
+
+  const room = badgeRight - 30 - (rect.x + 13);
+  const full = worldLabel(w, false);
+  const short = worldLabel(w, true);
+  const label = capW(full) <= room ? full : (capW(short) <= room ? short : null);
+  if (label) {
+    capLabel(ctx, label, rect.x + 13, cy, {
+      color: ch.won ? Palette.accent : (ch.dead ? Palette.hot : Palette.dim), alpha: 0.95,
+    });
+  }
 
   ctx.save();
+  ctx.strokeStyle = Palette.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(rect.x + 1, rect.y + headerH + 0.5);
+  ctx.lineTo(rect.x + rect.w - 1, rect.y + headerH + 0.5);
+  ctx.stroke();
+  ctx.restore();
+
+  // ---- world viewport
+  const vx = rect.x + 9;
+  const vy = rect.y + headerH + 4;
+  const vw = Math.max(8, rect.w - 18);
+  const vh = Math.max(8, rect.h - headerH - 13);
+  const scale = Math.max(0.05, Math.min(vw / W, vh / H));
+  const ox = vx + (vw - W * scale) / 2;
+  const oy = vy + (vh - H * scale) / 2;
+
+  ctx.save();
+  roundRect(ctx, vx, vy, vw, vh, 5);
+  ctx.clip();
   ctx.translate(ox, oy);
   ctx.scale(scale, scale);
 
-  const W = w.cols * TILE, H = w.rows * TILE;
-
-  // backdrop
+  // backdrop + a wash that flows the way this world reads your input, so a mirrored
+  // pair lights up symmetrically about the seam between them
   ctx.fillStyle = Palette.bg2;
   ctx.fillRect(0, 0, W, H);
+  const wash = ctx.createLinearGradient(w.flipX ? W : 0, 0, w.flipX ? 0 : W, 0);
+  wash.addColorStop(0, withAlpha(base, 0));
+  wash.addColorStop(1, withAlpha(base, 0.13));
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, W, H);
+  // and a second wash that is dark at whatever this world calls the sky
+  const sky = ctx.createLinearGradient(0, w.flipY ? H : 0, 0, w.flipY ? 0 : H);
+  sky.addColorStop(0, 'rgba(0,0,0,0.34)');
+  sky.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
 
-  // subtle grid
+  // grid
+  ctx.save();
   ctx.strokeStyle = Palette.grid;
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 1 / Math.max(0.4, scale);
+  ctx.globalAlpha = 0.4;
   ctx.beginPath();
   for (let c = 1; c < w.cols; c++) { ctx.moveTo(c * TILE, 0); ctx.lineTo(c * TILE, H); }
   for (let r = 1; r < w.rows; r++) { ctx.moveTo(0, r * TILE); ctx.lineTo(W, r * TILE); }
   ctx.stroke();
-  ctx.globalAlpha = 1;
+  ctx.restore();
 
   // tiles
+  const capCol = withAlpha(base, 0.42);
   for (let r = 0; r < w.rows; r++) {
     for (let c = 0; c < w.cols; c++) {
       if (w.solid[r][c]) {
         ctx.fillStyle = '#1c2436';
         ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
         ctx.fillStyle = '#28324a';
-        const openTop = !solidAt(w, c, r - 1);
-        if (openTop) ctx.fillRect(c * TILE, r * TILE, TILE, 2);
+        // the lit edge is the one the character actually stands on
+        const capR = w.flipY ? r + 1 : r - 1;
+        if (!solidAt(w, c, capR)) {
+          const cy2 = w.flipY ? (r + 1) * TILE - 2 : r * TILE;
+          ctx.fillRect(c * TILE, cy2, TILE, 2);
+          ctx.fillStyle = capCol;
+          ctx.fillRect(c * TILE, cy2, TILE, 1);
+        }
       }
       if (w.spike[r][c]) {
-        ctx.fillStyle = Palette.hot;
         const bx = c * TILE, by = r * TILE;
-        ctx.beginPath();
-        for (let k = 0; k < 4; k++) {
-          ctx.moveTo(bx + k * 4, by + TILE);
-          ctx.lineTo(bx + k * 4 + 2, by + TILE - 7);
-          ctx.lineTo(bx + k * 4 + 4, by + TILE);
-        }
-        ctx.fill();
+        withGlow(ctx, Palette.hot, 7, () => {
+          ctx.fillStyle = Palette.hot;
+          ctx.beginPath();
+          for (let k = 0; k < 4; k++) {
+            ctx.moveTo(bx + k * 4, by + TILE);
+            ctx.lineTo(bx + k * 4 + 2, by + TILE - 7);
+            ctx.lineTo(bx + k * 4 + 4, by + TILE);
+          }
+          ctx.fill();
+        });
       }
     }
   }
 
-  // exit
+  // exit portal
   const ex = w.exit.x * TILE, ey = w.exit.y * TILE;
-  const pulse = 0.55 + 0.45 * Math.sin(s.timerT * 3 + idx);
-  ctx.globalAlpha = ch.won ? 1 : pulse;
-  ctx.strokeStyle = Palette.accent;
-  ctx.lineWidth = 2;
-  roundRect(ctx, ex + 2.5, ey + 2.5, TILE - 5, TILE - 5, 3);
-  ctx.stroke();
-  ctx.globalAlpha = 0.16 * (ch.won ? 1.6 : pulse);
+  const pulse = 0.55 + 0.45 * Math.sin(t * 3 + idx);
+  ctx.save();
+  ctx.globalAlpha = 0.14 * (ch.won ? 2 : pulse);
   ctx.fillStyle = Palette.accent;
+  roundRect(ctx, ex + 2.5, ey + 2.5, TILE - 5, TILE - 5, 3);
   ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.restore();
+  withGlow(ctx, Palette.accent, 8 + 8 * pulse, () => {
+    ctx.strokeStyle = withAlpha(Palette.accent, ch.won ? 0.95 : 0.4 + 0.45 * pulse);
+    ctx.lineWidth = 1.4;
+    roundRect(ctx, ex + 2.5, ey + 2.5, TILE - 5, TILE - 5, 3);
+    ctx.stroke();
+  });
+  orb(ctx, ex + TILE / 2, ey + TILE / 2, 1.4 + pulse * 0.8, Palette.accent,
+    { glow: ch.won ? 1.6 : 0.5 + pulse * 0.6, rim: false });
 
-  // gravity marker for inverted worlds
-  if (w.flipY) {
-    ctx.globalAlpha = 0.5;
-    ctx.strokeStyle = Palette.violet;
-    ctx.lineWidth = 1.5;
-    for (let k = 0; k < 3; k++) {
-      const ax = W - 14, ay = 10 + k * 5;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay + 3); ctx.lineTo(ax + 3, ay); ctx.lineTo(ax + 6, ay + 3);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // character
+  // character — a lit object, not a filled rect
   if (!ch.dead) {
-    const col = ch.won ? Palette.accent : (w.flipY ? Palette.violet : (w.flipX ? Palette.accent2 : Palette.warm));
-    ctx.fillStyle = col;
-    ctx.shadowColor = col;
-    ctx.shadowBlur = ch.won ? 14 : 8;
+    const col = ch.won ? Palette.accent : base;
+    withGlow(ctx, col, ch.won ? 16 : 9, () => {
+      ctx.fillStyle = col;
+      roundRect(ctx, ch.x, ch.y, PW, PH, 2.5);
+      ctx.fill();
+    });
+    ctx.save();
     roundRect(ctx, ch.x, ch.y, PW, PH, 2.5);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    // eye — shows which way this one thinks "forward" is
+    ctx.clip();
+    // the highlight sits on this world's "up", so inverted selves are lit from below
+    const lg = ctx.createLinearGradient(0, w.flipY ? ch.y + PH : ch.y, 0, w.flipY ? ch.y : ch.y + PH);
+    lg.addColorStop(0, 'rgba(255,255,255,0.4)');
+    lg.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+    lg.addColorStop(1, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(ch.x - 1, ch.y - 1, PW + 2, PH + 2);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 0.7;
+    roundRect(ctx, ch.x + 0.35, ch.y + 0.35, PW - 0.7, PH - 0.7, 2.2);
+    ctx.stroke();
+    ctx.restore();
+    // eye — which way this one thinks forward is, on the end its head is at
+    ctx.save();
     ctx.fillStyle = Palette.bg;
-    ctx.fillRect(ch.x + (ch.face > 0 ? PW - 4 : 2), ch.y + 3, 2, 2);
+    ctx.fillRect(ch.x + (ch.face > 0 ? PW - 4 : 2), ch.y + (w.flipY ? PH - 5 : 3), 2, 2);
+    ctx.restore();
   }
+
+  // particles live in world units — draw them inside each bound world
+  FX.draw(ctx);
 
   ctx.restore();
+}
 
-  // panel frame + label
-  ctx.strokeStyle = ch.won ? Palette.accent : Palette.grid;
-  ctx.globalAlpha = ch.won ? 0.7 : 1;
-  ctx.lineWidth = 1;
-  roundRect(ctx, rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1, 8);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
+function drawHud(s, ctx, g) {
+  const compact = g.w < 760;
+  hudStrip(ctx, g);
 
-  const label = (w.flipX ? 'MIRRORED' : 'NORMAL') + (w.flipY ? ' · INVERTED' : '');
-  text(ctx, label, rect.x + 9, rect.y + rect.h + 7, {
-    size: 9, color: ch.won ? Palette.accent : Palette.dim, alpha: 0.85,
+  const level = LEVELS[s.levelIndex];
+  const levelValue = `${pad2(s.levelIndex + 1)}/${pad2(LEVELS.length)}`;
+  let x = 18;
+  stat(ctx, x, 20, 'Level', levelValue);
+  x += Math.max(capW('LEVEL'), monoW(levelValue, Type.value)) + 26;
+
+  if (!compact) {
+    stat(ctx, x, 20, 'Chamber', level.name.toUpperCase(), {
+      color: Palette.accent2, valueSize: Type.body,
+    });
+  }
+
+  let rx = g.w - 18;
+  const deaths = String(s.runDeaths);
+  stat(ctx, rx, 20, 'Deaths', deaths, {
+    align: 'right', color: s.runDeaths > 0 ? Palette.hot : Palette.ink,
+  });
+  rx -= Math.max(capW('DEATHS'), monoW(deaths, Type.value)) + 26;
+
+  if (!compact) {
+    const bound = s.sim.chars.reduce((a, c) => a + (c.won ? 1 : 0), 0);
+    const boundValue = `${bound}/${s.sim.chars.length}`;
+    stat(ctx, rx, 20, 'Bound', boundValue, {
+      align: 'right', valueSize: Type.body,
+      color: bound === s.sim.chars.length ? Palette.accent : Palette.ink,
+    });
+  }
+
+  // run progress along the bottom edge of the strip
+  meter(ctx, 0, HUD_H - 3, g.w, 3, (s.levelIndex + 1) / LEVELS.length, {
+    color: withAlpha(Palette.accent, 0.75),
+    track: 'rgba(255,255,255,0.04)',
+    radius: 0, glow: false,
   });
 }
 
 function render(s, ctx, g) {
-  s.timerT = g.t;
+  ctx.save();
   ctx.fillStyle = Palette.bg;
   ctx.fillRect(0, 0, g.w, g.h);
+  ctx.restore();
 
   const level = LEVELS[s.levelIndex];
-  const rects = panelRects(g, s.sim.worlds.length);
-  for (let i = 0; i < s.sim.worlds.length; i++) {
-    drawWorld(ctx, s.sim.worlds[i], s.sim.chars[i], rects[i], s, i);
+  const worlds = s.sim.worlds;
+  const worldW = Math.max(...worlds.map((w) => w.cols)) * TILE;
+  const worldH = Math.max(...worlds.map((w) => w.rows)) * TILE;
+  const rects = panelRects(g, worlds.length, worldW, worldH);
+
+  for (let i = 0; i < worlds.length; i++) {
+    drawWorld(ctx, worlds[i], s.sim.chars[i], rects[i], g.t, i);
   }
 
-  FX.draw(ctx);
-
-  // HUD
-  text(ctx, `${String(s.levelIndex + 1).padStart(2, '0')}/${String(LEVELS.length).padStart(2, '0')}  ${level.name.toUpperCase()}`,
-    12, 12, { size: 12, color: Palette.ink, weight: 700 });
-  text(ctx, `DEATHS ${s.runDeaths}`, g.w - 12, 12, { size: 11, color: Palette.dim, align: 'right' });
-
-  if (s.hintT > 0 && s.phase === 'play') {
-    const a = clamp(s.hintT / 0.6, 0, 1);
-    text(ctx, level.hint, g.w / 2, g.h - 16, { size: 11, color: Palette.dim, align: 'center', alpha: a });
+  // the bind between consecutive worlds
+  for (let i = 0; i + 1 < rects.length; i++) {
+    const a = rects[i], b = rects[i + 1];
+    if (a.row === b.row) drawSeam(ctx, a, b, true);
+    else if (a.col === b.col) drawSeam(ctx, a, b, false);
   }
 
   if (s.flash > 0) {
-    ctx.globalAlpha = s.flash * 0.28;
+    ctx.save();
+    ctx.globalAlpha = s.flash * 0.24;
     ctx.fillStyle = Palette.hot;
-    ctx.fillRect(0, 0, g.w, g.h);
-    ctx.globalAlpha = 1;
+    ctx.fillRect(0, HUD_H + 1, g.w, Math.max(0, g.h - HUD_H - 1));
+    ctx.restore();
+  }
+
+  drawHud(s, ctx, g);
+
+  if (s.hintT > 0 && s.phase === 'play') {
+    const a = clamp(s.hintT / 0.6, 0, 1);
+    const size = clamp((g.w - 72) / Math.max(1, level.hint.length * 0.62), 8, Type.small);
+    const pw = monoW(level.hint, size) + 30;
+    const ph = 22;
+    const px = g.w / 2 - pw / 2;
+    const py = g.h - 30;
+    ctx.save();
+    ctx.globalAlpha = a;
+    panel(ctx, px, py, pw, ph, {
+      fill: 'rgba(13,16,24,0.9)', border: Palette.grid, radius: ph / 2,
+    });
+    text(ctx, level.hint, g.w / 2, py + ph / 2, {
+      size, color: Palette.dim, align: 'center', baseline: 'middle',
+    });
+    ctx.restore();
+  }
+
+  if (s.phase === 'cleared') {
+    const bw = Math.min(g.w - 40, 210);
+    const bh = 34;
+    const bx = g.w / 2 - bw / 2;
+    const by = g.h / 2 - bh / 2;
+    panel(ctx, bx, by, bw, bh, {
+      fill: 'rgba(13,16,24,0.94)', border: withAlpha(Palette.accent, 0.45),
+      radius: bh / 2, glowColor: Palette.accent, glowBlur: 20,
+    });
+    capLabel(ctx, 'Chamber Clear', g.w / 2, by + bh / 2, {
+      size: Type.small, color: Palette.accent, align: 'center',
+    });
   }
 
   if (s.phase === 'intro') {
-    ctx.fillStyle = 'rgba(7,8,13,0.86)';
-    ctx.fillRect(0, 0, g.w, g.h);
-    text(ctx, 'MIRRORBIND', g.w / 2, g.h / 2 - 46, { size: 30, color: Palette.accent, align: 'center', weight: 700 });
-    text(ctx, 'One set of keys controls every version of you at once.', g.w / 2, g.h / 2 - 6, { size: 13, color: Palette.ink, align: 'center' });
-    text(ctx, 'Mirrored worlds read your left as their right. Get all of you home.', g.w / 2, g.h / 2 + 14, { size: 12, color: Palette.dim, align: 'center' });
-    text(ctx, '←/→ or A/D  ·  SPACE to jump  ·  R to retry', g.w / 2, g.h / 2 + 46, { size: 12, color: Palette.dim, align: 'center' });
-    const p = 0.5 + 0.5 * Math.sin(g.t * 3);
-    text(ctx, 'PRESS SPACE', g.w / 2, g.h / 2 + 78, { size: 13, color: Palette.warm, align: 'center', weight: 700, alpha: 0.4 + p * 0.6 });
+    titleCard(ctx, g, {
+      title: 'MIRRORBIND',
+      tagline: 'One input moves every version of you.',
+      lines: [
+        'Mirrored worlds read your left as their right.',
+        'Inverted worlds fall the other way.',
+        'If one of you dies, all of you die.',
+        '',
+        'ARROWS / A D to move · SPACE jump · R retry',
+      ],
+      prompt: 'PRESS SPACE',
+      t: g.t,
+      accent: Palette.accent,
+    });
   }
 
   if (s.phase === 'complete') {
-    ctx.fillStyle = 'rgba(7,8,13,0.9)';
-    ctx.fillRect(0, 0, g.w, g.h);
-    text(ctx, 'ALL TEN BOUND', g.w / 2, g.h / 2 - 30, { size: 26, color: Palette.accent, align: 'center', weight: 700 });
-    text(ctx, `You finished with ${s.runDeaths} deaths.`, g.w / 2, g.h / 2 + 6, { size: 13, color: Palette.ink, align: 'center' });
-    text(ctx, 'ENTER to run it back', g.w / 2, g.h / 2 + 34, { size: 12, color: Palette.dim, align: 'center' });
+    titleCard(ctx, g, {
+      title: 'ALL TEN BOUND',
+      tagline: `Finished with ${s.runDeaths} deaths.`,
+      lines: ['Every mirror walked itself home.'],
+      prompt: 'ENTER TO RUN IT BACK',
+      t: g.t,
+      accent: Palette.accent,
+    });
   }
+
+  vignette(ctx, g, 0.4);
 }
 
 // ---------------------------------------------------------------- boot + self-test

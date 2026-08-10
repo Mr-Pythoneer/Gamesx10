@@ -9,7 +9,8 @@
 
 import {
   boot, registerSelftest, Palette, FX, Sound, Store, RNG,
-  clamp, approach, text, roundRect, allFinite, TAU,
+  clamp, approach, text, allFinite, TAU,
+  Type, HUD_H, withGlow, stat, hudStrip, panel, meter, orb, vignette, titleCard,
 } from '../../shared/kit.js';
 
 import {
@@ -53,8 +54,14 @@ const rel = (n) => (n === 0 ? 'E' : n > 0 ? '+' + n : String(n));
 
 // ---------------------------------------------------------------- camera / view
 
+/** Height of the bottom status bar. The top strip is the kit's shared HUD_H. */
+const BOT_H = 38;
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+/** The play area: everything between the two status bars, derived from the canvas. */
 function viewRect(g) {
-  const top = 46, bot = 30, side = 14;
+  const top = HUD_H + 8, bot = BOT_H + 6, side = 14;
   return { x: side, y: top, w: Math.max(60, g.w - side * 2), h: Math.max(60, g.h - top - bot) };
 }
 
@@ -574,20 +581,26 @@ function drawGoal(s, ctx) {
   ctx.fillStyle = gr;
   ctx.beginPath(); ctx.arc(gl.x, gl.y, gl.r * 2.6, 0, TAU); ctx.fill();
 
+  // The rings are drawn inside the camera transform, so shadowBlur is in WORLD units
+  // and the renderer scales it by cam.scale. Multiplying by px (= 1/scale) lands the
+  // halo at a constant ~14 screen pixels however far the camera has pulled back.
+  withGlow(ctx, Palette.accent, 14 * px, () => {
+    ctx.strokeStyle = Palette.accent;
+    ctx.lineWidth = 2.4 * px;
+    ctx.globalAlpha = 0.55 + pulse * 0.45;
+    ctx.beginPath(); ctx.arc(gl.x, gl.y, gl.r, 0, TAU); ctx.stroke();
+
+    ctx.lineWidth = 1.2 * px;
+    ctx.globalAlpha = 0.3 + pulse * 0.4;
+    ctx.beginPath(); ctx.arc(gl.x, gl.y, gl.r * (1.25 + pulse * 0.3), 0, TAU); ctx.stroke();
+
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = Palette.accent;
+    ctx.beginPath(); ctx.arc(gl.x, gl.y, 2.6 * px + 1.5, 0, TAU); ctx.fill();
+  });
+
+  // crosshair ticks — deliberately crisp, so they stay readable against the halo
   ctx.strokeStyle = Palette.accent;
-  ctx.lineWidth = 2.4 * px;
-  ctx.globalAlpha = 0.55 + pulse * 0.45;
-  ctx.beginPath(); ctx.arc(gl.x, gl.y, gl.r, 0, TAU); ctx.stroke();
-
-  ctx.lineWidth = 1.2 * px;
-  ctx.globalAlpha = 0.3 + pulse * 0.4;
-  ctx.beginPath(); ctx.arc(gl.x, gl.y, gl.r * (1.25 + pulse * 0.3), 0, TAU); ctx.stroke();
-
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = Palette.accent;
-  ctx.beginPath(); ctx.arc(gl.x, gl.y, 2.6 * px + 1.5, 0, TAU); ctx.fill();
-
-  // crosshair ticks
   ctx.globalAlpha = 0.5;
   ctx.lineWidth = 1.4 * px;
   for (let k = 0; k < 4; k++) {
@@ -600,29 +613,42 @@ function drawGoal(s, ctx) {
   ctx.restore();
 }
 
+/**
+ * A comet, not a wire: each segment gets its own alpha and width so the tail fades
+ * into the dark and the head reads as the live end. Stepped by a stride like
+ * drawPreview, because a full flight can be 1200 points long.
+ */
 function drawTrail(s, ctx, pts, color, maxAlpha, width) {
   if (!pts || pts.length < 2) return;
   const px = 1 / s.cam.scale;
+  const n = pts.length;
+  const stride = Math.max(1, Math.floor(n / 220));
+
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.strokeStyle = color;
-  ctx.lineWidth = width * px;
-  const n = pts.length;
-  // Break the polyline wherever the probe teleported, so warps do not draw a straight seam.
-  let started = false;
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) {
-    const p = pts[i];
-    if (i > 0) {
-      const q = pts[i - 1];
-      if (Math.abs(p.x - q.x) > 260 || Math.abs(p.y - q.y) > 260) { started = false; }
-    }
-    if (!started) { ctx.moveTo(p.x, p.y); started = true; }
-    else ctx.lineTo(p.x, p.y);
+
+  // f runs 0 (oldest) -> 1 (newest).
+  const seg = (a, b, f) => {
+    // Break the polyline wherever the probe teleported, so warps do not draw a straight seam.
+    if (Math.abs(b.x - a.x) > 260 || Math.abs(b.y - a.y) > 260) return;
+    ctx.globalAlpha = maxAlpha * (0.16 + 0.84 * f * f);
+    ctx.lineWidth = width * (0.35 + 0.65 * f) * px;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  };
+
+  let last = 0;
+  for (let i = stride; i < n; i += stride) {
+    seg(pts[last], pts[i], i / (n - 1));
+    last = i;
   }
-  ctx.globalAlpha = maxAlpha;
-  ctx.stroke();
+  if (last < n - 1) seg(pts[last], pts[n - 1], 1);  // keep the head attached to the probe
+
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -675,16 +701,21 @@ function drawProbe(s, ctx) {
   const pulse = idle ? 0.5 + 0.5 * Math.sin(s.t * 3.2) : 1;
 
   ctx.save();
-  const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 26);
-  gr.addColorStop(0, 'rgba(255,200,87,0.55)');
+  // wide corona first — this is the object the eye tracks, so it gets real reach
+  const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 30);
+  gr.addColorStop(0, 'rgba(255,200,87,0.50)');
+  gr.addColorStop(0.4, 'rgba(255,200,87,0.16)');
   gr.addColorStop(1, 'rgba(255,200,87,0)');
   ctx.fillStyle = gr;
-  ctx.beginPath(); ctx.arc(p.x, p.y, 26, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, TAU); ctx.fill();
 
-  ctx.fillStyle = Palette.warm;
-  ctx.beginPath(); ctx.arc(p.x, p.y, PROBE_R, 0, TAU); ctx.fill();
-  ctx.fillStyle = Palette.ink;
-  ctx.beginPath(); ctx.arc(p.x - 1.2, p.y - 1.2, PROBE_R * 0.42, 0, TAU); ctx.fill();
+  // Inside the camera transform shadowBlur is in world units, so scale it by px
+  // (= 1/cam.scale) to hold a constant ~10 screen pixels of bloom at any zoom.
+  withGlow(ctx, Palette.warm, 10 * px, () => {
+    orb(ctx, p.x, p.y, PROBE_R, Palette.warm, { glow: 1.2 });
+  });
+  ctx.fillStyle = '#fff3d6';
+  ctx.beginPath(); ctx.arc(p.x - PROBE_R * 0.24, p.y - PROBE_R * 0.24, PROBE_R * 0.42, 0, TAU); ctx.fill();
 
   if (idle) {
     ctx.strokeStyle = Palette.warm;
@@ -747,175 +778,260 @@ function drawAim(s, ctx, g) {
 
 // ---------------------------------------------------------------- HUD
 
+/** Width of a string in the HUD's mono face, without disturbing the draw state. */
+function measure(ctx, str, size, weight = 700) {
+  ctx.save();
+  ctx.font = `${weight} ${size}px ${MONO}`;
+  const w = ctx.measureText(str).width;
+  ctx.restore();
+  return w;
+}
+
+/** Truncate to fit maxW rather than letting flavour text collide with a readout. */
+function fitText(ctx, str, maxW, size, weight = 600) {
+  ctx.save();
+  ctx.font = `${weight} ${size}px ${MONO}`;
+  let out = str;
+  if (ctx.measureText(out).width > maxW) {
+    while (out.length > 1 && ctx.measureText(out + '...').width > maxW) out = out.slice(0, -1);
+    out += '...';
+  }
+  ctx.restore();
+  return out;
+}
+
+/** The bottom bar: the same surface language as the kit's hudStrip, mirrored. */
+function bottomBar(ctx, g) {
+  const y = g.h - BOT_H;
+  ctx.save();
+  ctx.fillStyle = 'rgba(13,16,24,0.92)';
+  ctx.fillRect(0, y, g.w, BOT_H);
+  ctx.strokeStyle = Palette.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, y + 0.5);
+  ctx.lineTo(g.w, y + 0.5);
+  ctx.stroke();
+  ctx.restore();
+  return y;
+}
+
 function drawHud(s, ctx, g) {
   const hole = HOLES[s.holeIndex];
   const num = String(s.holeIndex + 1).padStart(2, '0');
-  const narrow = g.w < 620;
+  const cx = g.w / 2;
+  const pad = clamp(g.w * 0.014, 12, 22);
+  const wide = g.w >= 880;
+  const mid = g.w >= 700;
+  const narrow = g.w < 560;
   const tiny = g.w < 430;
+  const vSize = narrow ? 20 : Type.value;
+  const labelY = 20;                       // label baseline; stat() puts the value at +vSize+2
+  const valueY = labelY + vSize + 2;
 
-  text(ctx, `HOLE ${num}/${HOLE_COUNT}`, 14, 12, { size: 12, color: Palette.accent, weight: 700 });
-  if (!tiny) text(ctx, hole.name.toUpperCase(), 14, 28, { size: 11, color: Palette.ink, weight: 600 });
+  // ---------------------------------------------------------------- top strip
+  hudStrip(ctx, g, { h: HUD_H });
 
-  const best = s.bestHoles[s.holeIndex];
-  const hasBest = best !== null && best !== undefined;
-  text(ctx, `PAR ${hole.par}` + (hasBest ? `  ·  BEST ${best}` : ''), g.w / 2, 12,
-    { size: 11, color: Palette.dim, align: 'center', weight: 600 });
-  if (!narrow) {
-    text(ctx, `ROUND PAR ${TOTAL_PAR}` + (s.bestRound !== null ? `  ·  BEST ROUND ${s.bestRound}` : ''),
-      g.w / 2, 28, { size: 10, color: Palette.dim, align: 'center', alpha: 0.65 });
+  // LEFT — where you are in the round, with the hole name as secondary flavour
+  const holeVal = `${num}/${HOLE_COUNT}`;
+  stat(ctx, pad, labelY, 'HOLE', holeVal, { color: Palette.accent, valueSize: vSize });
+  if (wide) {
+    const nameX = pad + measure(ctx, holeVal, vSize) + 18;
+    const nameMax = cx - 70 - nameX;
+    if (nameMax > 56) {
+      text(ctx, fitText(ctx, hole.name.toUpperCase(), nameMax, Type.label), nameX, valueY, {
+        size: Type.label, color: Palette.dim, weight: 600, baseline: 'alphabetic',
+      });
+    }
   }
 
+  // CENTRE — the target
+  const best = s.bestHoles[s.holeIndex];
+  const hasBest = best !== null && best !== undefined;
+  if (!tiny) {
+    if (hasBest && mid) {
+      stat(ctx, cx - 38, labelY, 'PAR', hole.par, { align: 'center', valueSize: vSize });
+      stat(ctx, cx + 38, labelY, 'BEST', best, { align: 'center', valueSize: vSize, color: Palette.accent2 });
+    } else {
+      stat(ctx, cx, labelY, 'PAR', hole.par, { align: 'center', valueSize: vSize });
+    }
+  }
+
+  // RIGHT — this hole, then the whole round against par
   const parSoFar = HOLES.slice(0, s.holeIndex).reduce((n, h) => n + h.par, 0) + hole.par;
   const vs = s.totalStrokes - parSoFar;
-  text(ctx, `STROKES ${s.strokes}`, g.w - 14, 12, { size: 12, color: Palette.warm, align: 'right', weight: 700 });
-  text(ctx, `${tiny ? '' : 'ROUND '}${s.totalStrokes} · ${rel(vs)}`, g.w - 14, 28, {
-    size: 11, align: 'right',
-    color: vs < 0 ? Palette.accent : vs > 0 ? Palette.hot : Palette.dim,
-  });
+  const rx = g.w - pad;
+  if (narrow) {
+    stat(ctx, rx, labelY, 'STROKES', s.strokes, { align: 'right', color: Palette.warm, valueSize: vSize });
+  } else {
+    const roundVal = `${s.totalStrokes} ${rel(vs)}`;
+    stat(ctx, rx, labelY, 'ROUND', roundVal, {
+      align: 'right', valueSize: vSize,
+      color: vs < 0 ? Palette.accent : vs > 0 ? Palette.hot : Palette.ink,
+    });
+    stat(ctx, rx - measure(ctx, roundVal, vSize) - 30, labelY, 'STROKES', s.strokes, {
+      align: 'right', color: Palette.warm, valueSize: vSize,
+    });
+  }
 
-  // hole progress pips
-  const pipY = g.h - 17, pipW = Math.max(3, Math.min(9, (g.w - 40) / HOLE_COUNT));
+  // ---------------------------------------------------------------- bottom bar
+  const barY = bottomBar(ctx, g);
+  const barMid = barY + BOT_H / 2;
+
+  if (!narrow) {
+    text(ctx, `ROUND PAR ${TOTAL_PAR}` + (s.bestRound !== null ? `  ·  BEST ${s.bestRound}` : ''),
+      pad, barMid, { size: Type.micro, color: Palette.dim, baseline: 'middle', alpha: 0.75 });
+  }
+  if (mid) {
+    text(ctx, 'R RESET  ·  SPACE FAST-FORWARD', rx, barMid, {
+      size: Type.micro, color: Palette.dim, align: 'right', baseline: 'middle', alpha: 0.55,
+    });
+  }
+
+  // hole progress pips, seated on the bar's centre line
+  const pipW = clamp((g.w - 260) / HOLE_COUNT, 4, 10);
   for (let i = 0; i < HOLE_COUNT; i++) {
-    const x = g.w / 2 - (HOLE_COUNT * pipW) / 2 + i * pipW;
+    const x = cx - (HOLE_COUNT * pipW) / 2 + i * pipW;
     const done = s.scores[i] !== undefined;
     ctx.globalAlpha = i === s.holeIndex ? 1 : done ? 0.75 : 0.25;
     ctx.fillStyle = i === s.holeIndex ? Palette.warm
       : done ? (s.scores[i] <= HOLES[i].par ? Palette.accent : Palette.dim)
       : Palette.grid;
-    ctx.fillRect(x, pipY, Math.max(2, pipW - 2), 4);
+    ctx.fillRect(x, barMid - 2, Math.max(2, pipW - 2), 4);
   }
   ctx.globalAlpha = 1;
 
-  const lineY = g.h - 40;
+  // ---------------------------------------------------------------- transient line
+  const lineY = barY - 30;
+  // The longest hint is 75 characters; mono advance is ~0.6em, so step the size down
+  // as the canvas narrows rather than letting a sentence run off both edges.
+  const hintSize = g.w >= 780 ? Type.small : g.w >= 560 ? Type.label : g.w >= 470 ? Type.micro : 9;
   if (s.messageT > 0 && s.message) {
     const a = clamp(s.messageT / 0.5, 0, 1);
-    text(ctx, s.message, g.w / 2, lineY, { size: 13, color: Palette.hot, align: 'center', weight: 700, alpha: a });
+    withGlow(ctx, Palette.hot, 14, () => {
+      text(ctx, s.message, cx, lineY, { size: Type.small, color: Palette.hot, align: 'center', weight: 700, alpha: a });
+    });
   } else if (s.hintT > 0 && s.phase === 'aim') {
     const a = clamp(s.hintT / 1.0, 0, 1);
-    text(ctx, hole.hint, g.w / 2, lineY, { size: tiny ? 9 : 11, color: Palette.dim, align: 'center', alpha: a });
+    text(ctx, hole.hint, cx, lineY, { size: hintSize, color: Palette.dim, align: 'center', alpha: a });
   } else if (s.phase === 'aim' && !s.drag.active) {
     const p = 0.5 + 0.5 * Math.sin(s.t * 2.6);
-    text(ctx, 'DRAG BACK AND RELEASE TO LAUNCH', g.w / 2, lineY, {
-      size: 11, color: Palette.dim, align: 'center', alpha: 0.35 + p * 0.35,
+    text(ctx, 'DRAG BACK AND RELEASE TO LAUNCH', cx, lineY, {
+      size: Type.label, color: Palette.dim, align: 'center', weight: 600, alpha: 0.32 + p * 0.34,
     });
   } else if (s.phase === 'fly') {
-    text(ctx, 'HOLD SPACE TO FAST-FORWARD', g.w / 2, lineY, { size: 10, color: Palette.dim, align: 'center', alpha: 0.5 });
+    text(ctx, 'HOLD SPACE TO FAST-FORWARD', cx, lineY, {
+      size: Type.micro, color: Palette.dim, align: 'center', alpha: 0.5,
+    });
   }
 
   if (s.drag.active && s.drag.pull > 10) {
     const frac = clamp(s.drag.pull / pullMax(g), 0, 1);
-    text(ctx, `${Math.round(frac * 100)}% POWER`, g.w / 2, lineY - 18, {
-      size: 12, color: frac > 0.92 ? Palette.hot : Palette.warm, align: 'center', weight: 700,
+    const col = frac > 0.92 ? Palette.hot : Palette.warm;
+    const mw = Math.min(300, g.w * 0.34);
+    meter(ctx, cx - mw / 2, lineY - 14, mw, 6, frac, { color: col });
+    text(ctx, `${Math.round(frac * 100)}% POWER`, cx, lineY - 36, {
+      size: Type.small, color: col, align: 'center', weight: 700,
     });
   }
-}
-
-function panel(ctx, x, y, w, h) {
-  ctx.save();
-  ctx.fillStyle = 'rgba(9,11,18,0.9)';
-  roundRect(ctx, x, y, w, h, 12);
-  ctx.fill();
-  ctx.strokeStyle = Palette.grid;
-  ctx.lineWidth = 1;
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 12);
-  ctx.stroke();
-  ctx.restore();
 }
 
 function drawIntro(s, ctx, g) {
-  ctx.fillStyle = 'rgba(7,8,13,0.88)';
-  ctx.fillRect(0, 0, g.w, g.h);
-  const cx = g.w / 2;
-  const w = Math.min(560, g.w - 28);
-  const roomy = g.h >= 430, mid = g.h >= 320;
-
-  const L = [];
-  L.push({ t: 'ORBITAL', size: Math.min(42, w * 0.11), color: Palette.accent, weight: 700, gap: 50 });
-  L.push({ t: 'N-BODY GRAVITY GOLF', size: 11, color: Palette.accent2, weight: 600, gap: 26 });
-  L.push({ t: 'Launch a probe. Real gravity does the rest.', size: 12, color: Palette.ink, gap: mid ? 26 : 20 });
+  const roomy = g.h >= 470, mid = g.h >= 360;
+  const lines = ['Launch a probe. Real gravity does the rest.'];
   if (roomy) {
-    L.push({ t: 'Slingshot round planets, dodge black holes,', size: 11, color: Palette.dim, gap: 17 });
-    L.push({ t: 'dive through wormholes. Sink it under par.', size: 11, color: Palette.dim, gap: 30 });
+    lines.push('Slingshot round planets, dodge black holes,');
+    lines.push('dive through wormholes. Sink it under par.');
   } else if (mid) {
-    L.push({ t: 'Slingshot, dodge, warp. Sink it under par.', size: 10, color: Palette.dim, gap: 26 });
+    lines.push('Slingshot, dodge, warp. Sink it under par.');
   }
-  L.push({ t: 'DRAG back from the probe, release to fire', size: 11, color: Palette.ink, gap: mid ? 19 : 16 });
-  if (mid) L.push({ t: 'R reset hole  ·  SPACE fast-forward', size: 10, color: Palette.dim, gap: 24 });
-  L.push({ t: `${HOLE_COUNT} HOLES  ·  TOTAL PAR ${TOTAL_PAR}`, size: 11, color: Palette.warm, weight: 600, gap: 32 });
-  L.push({ t: 'DRAG TO LAUNCH', size: 15, color: Palette.warm, weight: 700, pulse: true, gap: 0 });
+  lines.push('');
+  lines.push('DRAG back from the probe, release to fire');
+  if (mid) lines.push('R reset hole  ·  SPACE fast-forward');
+  lines.push(`${HOLE_COUNT} HOLES  ·  TOTAL PAR ${TOTAL_PAR}`);
 
-  let contentH = L[L.length - 1].size;
-  for (const l of L) contentH += l.gap;
-  const h = Math.min(g.h - 16, contentH + 42);
-  const top = g.h / 2 - h / 2;
-  panel(ctx, cx - w / 2, top, w, h);
-
-  const pulse = 0.5 + 0.5 * Math.sin(s.t * 3);
-  let y = top + 21;
-  for (const l of L) {
-    text(ctx, l.t, cx, y, {
-      size: l.size, color: l.color, align: 'center', weight: l.weight || 500,
-      alpha: l.pulse ? 0.35 + pulse * 0.65 : 1,
-    });
-    y += l.gap;
-  }
+  titleCard(ctx, g, {
+    title: 'ORBITAL',
+    tagline: 'N-BODY GRAVITY GOLF',
+    lines,
+    prompt: 'DRAG TO LAUNCH',
+    t: s.t,
+    accent: Palette.accent,
+  });
 }
 
 function drawBanner(s, ctx, g) {
   if (!s.banner) return;
   const a = clamp(s.banner.t / 0.22, 0, 1) * clamp((s.resultT + 0.4) / 0.5, 0, 1);
-  const cy = g.h * 0.32;
+  const cy = Math.max(HUD_H + 46, g.h * 0.30);
   const rise = (1 - clamp(s.banner.t / 0.35, 0, 1)) * 18;
-  text(ctx, s.banner.title, g.w / 2, cy - rise, {
-    size: Math.min(42, g.w * 0.07), color: s.banner.color, align: 'center', weight: 700, alpha: a,
+  const size = Math.min(Type.huge - 8, g.w * 0.075);
+  withGlow(ctx, s.banner.color, 26, () => {
+    text(ctx, s.banner.title, g.w / 2, cy - rise, {
+      size, color: s.banner.color, align: 'center', weight: 700, alpha: a,
+      font: 'ui-serif, "New York", Palatino, Georgia, serif',
+    });
   });
-  text(ctx, s.banner.sub, g.w / 2, cy + 38 - rise, { size: 12, color: Palette.ink, align: 'center', alpha: a * 0.9 });
-  text(ctx, 'ENTER for the next hole', g.w / 2, cy + 62 - rise, { size: 10, color: Palette.dim, align: 'center', alpha: a * 0.8 });
+  text(ctx, s.banner.sub, g.w / 2, cy + size + 8 - rise, {
+    size: Type.small, color: Palette.ink, align: 'center', alpha: a * 0.9,
+  });
+  text(ctx, 'ENTER for the next hole', g.w / 2, cy + size + 30 - rise, {
+    size: Type.label, color: Palette.dim, align: 'center', alpha: a * 0.8,
+  });
 }
 
 function drawRound(s, ctx, g) {
-  ctx.fillStyle = 'rgba(7,8,13,0.9)';
-  ctx.fillRect(0, 0, g.w, g.h);
   const cx = g.w / 2;
-  const w = Math.min(620, g.w - 28);
-  const full = g.h >= 380 && g.w >= 470;
-  const h = Math.min(g.h - 16, full ? 400 : 200);
-  const top = g.h / 2 - h / 2;
-  panel(ctx, cx - w / 2, top, w, h);
-
   const vs = s.totalStrokes - TOTAL_PAR;
-  text(ctx, 'ROUND COMPLETE', cx, top + 24, { size: Math.min(22, w * 0.05), color: Palette.accent, align: 'center', weight: 700 });
-  text(ctx, `${s.totalStrokes} STROKES  ·  PAR ${TOTAL_PAR}  ·  ${rel(vs)}`, cx, top + 58, {
-    size: Math.min(15, w * 0.036), color: vs <= 0 ? Palette.accent : Palette.warm, align: 'center', weight: 600,
-  });
-  text(ctx, s.roundBest ? 'NEW BEST ROUND' : `BEST ROUND ${s.bestRound}`, cx, top + 84, {
-    size: 11, color: s.roundBest ? Palette.warm : Palette.dim, align: 'center', weight: 600,
+
+  titleCard(ctx, g, {
+    title: 'ROUND COMPLETE',
+    tagline: `${s.totalStrokes} STROKES  ·  PAR ${TOTAL_PAR}  ·  ${rel(vs)}`,
+    lines: [
+      s.roundBest ? 'NEW BEST ROUND' : `BEST ROUND ${s.bestRound}`,
+      `${s.roundsPlayed} round${s.roundsPlayed === 1 ? '' : 's'} played`,
+    ],
+    prompt: 'ENTER to play another round',
+    t: s.t,
+    accent: vs <= 0 ? Palette.accent : Palette.warm,
   });
 
-  if (full) {
-    const cardTop = top + 118;
-    const colW = (w - 60) / 9;
-    for (let row = 0; row < 2; row++) {
-      const y = cardTop + row * 74;
-      for (let i = 0; i < 9; i++) {
-        const idx = row * 9 + i;
-        const x = cx - w / 2 + 30 + i * colW + colW / 2;
-        const sc = s.scores[idx];
-        text(ctx, String(idx + 1), x, y, { size: 10, color: Palette.dim, align: 'center' });
-        text(ctx, String(HOLES[idx].par), x, y + 16, { size: 10, color: '#5a657c', align: 'center' });
-        const d = sc === undefined ? 0 : sc - HOLES[idx].par;
-        text(ctx, sc === undefined ? '-' : String(sc), x, y + 34, {
-          size: 15, align: 'center', weight: 700,
-          color: sc === undefined ? Palette.dim : d < 0 ? Palette.accent : d === 0 ? Palette.ink : Palette.hot,
-        });
-      }
+  // titleCard centres its block on g.h/2: the title baseline lands at g.h/2 - 70, then
+  // +34 for the tagline, +26, one line every 20, and the prompt +22 after the last one.
+  // With one tagline and exactly two lines that puts the prompt at g.h/2 + 52, so the
+  // scorecard hangs off THAT rather than off a magic constant.
+  const promptY = g.h / 2 + 52;
+  const cardTop = promptY + 26;
+  const cardW = Math.min(660, g.w - 28);
+  const padTop = 30, rowH = 50, capH = 20;
+  const cardH = padTop + 2 * rowH + capH;
+  // Only show the scorecard when it provably clears the prompt AND the canvas floor.
+  if (g.w < 470 || cardTop + cardH > g.h - 12) return;
+
+  panel(ctx, cx - cardW / 2, cardTop, cardW, cardH, {
+    radius: 6, title: 'SCORECARD', glowColor: 'rgba(0,0,0,0.55)', glowBlur: 30,
+  });
+
+  const colW = (cardW - 44) / 9;
+  for (let row = 0; row < 2; row++) {
+    const y = cardTop + padTop + row * rowH;
+    for (let i = 0; i < 9; i++) {
+      const idx = row * 9 + i;
+      const x = cx - cardW / 2 + 22 + i * colW + colW / 2;
+      const sc = s.scores[idx];
+      const d = sc === undefined ? 0 : sc - HOLES[idx].par;
+      text(ctx, String(idx + 1), x, y, { size: Type.micro, color: Palette.dim, align: 'center' });
+      text(ctx, String(HOLES[idx].par), x, y + 13, {
+        size: Type.micro, color: Palette.dim, align: 'center', alpha: 0.55,
+      });
+      text(ctx, sc === undefined ? '-' : String(sc), x, y + 27, {
+        size: Type.body, align: 'center', weight: 700,
+        color: sc === undefined ? Palette.dim : d < 0 ? Palette.accent : d === 0 ? Palette.ink : Palette.hot,
+      });
     }
-    text(ctx, 'HOLE / PAR / SCORE', cx, cardTop + 152, { size: 9, color: Palette.dim, align: 'center', alpha: 0.6 });
   }
-
-  const p = 0.5 + 0.5 * Math.sin(s.t * 3);
-  text(ctx, 'ENTER to play another round', cx, top + h - 26, {
-    size: 12, color: Palette.warm, align: 'center', weight: 700, alpha: 0.4 + p * 0.6,
+  text(ctx, 'HOLE / PAR / SCORE', cx, cardTop + padTop + 2 * rowH + 2, {
+    size: Type.micro, color: Palette.dim, align: 'center', alpha: 0.6,
   });
 }
 
@@ -973,6 +1089,10 @@ function render(s, ctx, g) {
     ctx.fillRect(0, 0, g.w, g.h);
     ctx.globalAlpha = 1;
   }
+
+  // Finishing pass on the WORLD only — the HUD is drawn after it, so the strips and
+  // their readouts stay at full brightness while the play area falls away at the edges.
+  vignette(ctx, g, 0.45);
 
   drawHud(s, ctx, g);
   if (s.phase === 'sunk') drawBanner(s, ctx, g);

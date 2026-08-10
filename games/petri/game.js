@@ -3,7 +3,10 @@
 // shared grid and they live, die and fight along their own rules. Same seed + same stamps
 // always produces the same match — the sim below never touches Math.random()/Date.now().
 
-import { boot, RNG, Palette, clamp, lerp, text, roundRect, allFinite, registerSelftest } from '../../shared/kit.js';
+import {
+  boot, RNG, Palette, clamp, text, roundRect, allFinite, registerSelftest,
+  Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
+} from '../../shared/kit.js';
 import { PATTERNS, patternById, rotatePattern, patternBounds, stampPattern } from './patterns.js';
 
 // ---------------------------------------------------------------- constants
@@ -219,19 +222,39 @@ export function stepSim(sim, intent, dt) {
 
 // ---------------------------------------------------------------- kit-facing game wrapper
 
-const UI_TOP = 64, UI_BOTTOM = 86;
+const MAX_COST = PATTERNS.reduce((m, p) => (p.cost > m ? p.cost : m), 0);
 
-function boardArea(game) {
-  const uiTop = UI_TOP;
-  const areaH = Math.max(10, game.h - UI_TOP - UI_BOTTOM);
-  return { uiTop, areaH };
+/**
+ * Single source of truth for the screen. The top chrome (stats + territory bar) and the
+ * pattern palette are reserved first; whatever is left is the dish. pointerToGrid() reads
+ * the SAME rect the board is drawn into, so a click always lands on the cell under the
+ * cursor at any canvas size. Under ~560px tall (or ~620px wide) everything drops to a
+ * compact scale rather than overlapping.
+ */
+function layout(game) {
+  const compact = game.h < 560 || game.w < 620;
+  const hudH = compact ? 46 : HUD_H;
+  const terrH = compact ? 24 : 30;
+  const palH = compact ? 74 : 92;
+  const boardTop = hudH + terrH;
+  const boardH = Math.max(24, game.h - boardTop - palH);
+  return { compact, hudH, terrH, palH, boardTop, boardH, pad: compact ? 12 : 16 };
 }
 
 function pointerToGrid(game) {
-  const { uiTop, areaH } = boardArea(game);
+  const L = layout(game);
   const gx = clamp(Math.floor((game.input.pointer.x / game.w) * GW), 0, GW - 1);
-  const gy = clamp(Math.floor(((game.input.pointer.y - uiTop) / areaH) * GH), 0, GH - 1);
+  const gy = clamp(Math.floor(((game.input.pointer.y - L.boardTop) / L.boardH) * GH), 0, GH - 1);
   return { gx, gy };
+}
+
+/** rotatePattern allocates; the render layer asks for the same 24 combinations forever. */
+const rotCache = new Map();
+function rotatedCells(pattern, rot) {
+  const key = pattern.id + '|' + (((rot % 4) + 4) % 4);
+  let cells = rotCache.get(key);
+  if (!cells) { cells = rotatePattern(pattern.cells, rot); rotCache.set(key, cells); }
+  return cells;
 }
 
 function init(game) {
@@ -243,9 +266,17 @@ function init(game) {
     rot: 0,
     introDone: false,
     fade: new Float32Array(GW * GH),
+    // last colour each cell belonged to, so a dying colony fades out in its own colour
+    // instead of blinking straight to background. Render-layer only; never read by the sim.
+    owner: new Uint8Array(GW * GH),
     imgData: null,
     offCanvas: null,
     offCtx: null,
+    glowCanvas: null,
+    glowCtx: null,
+    glowData: null,
+    blurCanvas: null,
+    blurCtx: null,
     flashT: 0,
     territoryTone: 0,
     endTimer: 0,
@@ -280,6 +311,7 @@ function update(state, dt, game) {
       state.sim = makeSim(game.seed + '#' + game.frame, nextLevel);
       state.endTimer = 0;
       state.fade.fill(0);
+      state.owner.fill(0);
     }
     return;
   }
@@ -293,6 +325,9 @@ function update(state, dt, game) {
     if (state.sim.biomassP >= pattern.cost) {
       intent = { stamp: { patternId: state.selected, x: gx, y: gy, rot: state.rot } };
       game.sound.tone({ freq: 220, dur: 0.05, type: 'square', gain: 0.1 });
+      game.fx.burst(game.input.pointer.x, game.input.pointer.y, {
+        count: 10, color: Palette.accent, speed: 90, life: 0.35, size: 2, drag: 0.86,
+      });
     } else {
       game.sound.bad();
     }
@@ -324,161 +359,408 @@ function update(state, dt, game) {
   }
 
   // cell fade toward alive/dead for smooth render
-  const grid = state.sim.grid, fade = state.fade;
+  const grid = state.sim.grid, fade = state.fade, owner = state.owner;
+  const k = Math.min(1, dt * 9);
   for (let i = 0; i < grid.length; i++) {
-    const target = grid[i] === 0 ? 0 : 1;
-    fade[i] += (target - fade[i]) * Math.min(1, dt * 10);
+    const v = grid[i];
+    if (v !== 0) owner[i] = v;
+    fade[i] += ((v === 0 ? 0 : 1) - fade[i]) * k;
   }
 }
 
 // ---------------------------------------------------------------- render
 
 function ensureOffscreen(state) {
-  if (!state.offCanvas) {
-    state.offCanvas = document.createElement('canvas');
-    state.offCanvas.width = GW; state.offCanvas.height = GH;
-    state.offCtx = state.offCanvas.getContext('2d');
-    state.imgData = state.offCtx.createImageData(GW, GH);
-  }
+  if (state.offCanvas) return;
+  // The dish itself: one 120x80 ImageData blitted with smoothing off. This is the fast
+  // path — 9600 cells as per-cell fillRect() calls would cost an order of magnitude more.
+  state.offCanvas = document.createElement('canvas');
+  state.offCanvas.width = GW; state.offCanvas.height = GH;
+  state.offCtx = state.offCanvas.getContext('2d');
+  state.imgData = state.offCtx.createImageData(GW, GH);
+  // Bloom source: the same cells with a transparent background, so compositing it back
+  // with 'lighter' adds light only where something is alive.
+  state.glowCanvas = document.createElement('canvas');
+  state.glowCanvas.width = GW; state.glowCanvas.height = GH;
+  state.glowCtx = state.glowCanvas.getContext('2d');
+  state.glowData = state.glowCtx.createImageData(GW, GH);
+  // ...and the blur runs at 2x grid resolution (240x160), not at screen resolution. The
+  // upscale to the board does the rest of the softening for free, which keeps the whole
+  // bloom pass at a few tens of thousands of pixels per frame instead of a million.
+  state.blurCanvas = document.createElement('canvas');
+  state.blurCanvas.width = GW * 2; state.blurCanvas.height = GH * 2;
+  state.blurCtx = state.blurCanvas.getContext('2d');
 }
 
 const COL_P = [94, 242, 192];   // accent (mint) — player
-const COL_AI = [255, 77, 109];  // hot (red) — AI
+const COL_AI = [255, 77, 109];  // hot (red) — rival
 
-function renderGrid(state, ctx, game) {
+function renderBoard(state, ctx, game, L) {
   ensureOffscreen(state);
-  const { grid } = state.sim;
-  const data = state.imgData.data;
-  const fade = state.fade;
-  for (let i = 0; i < grid.length; i++) {
+  const grid = state.sim.grid;
+  const fade = state.fade, owner = state.owner;
+  const data = state.imgData.data, glow = state.glowData.data;
+  for (let i = 0, o = 0; i < grid.length; i++, o += 4) {
     const v = grid[i];
     const a = fade[i];
-    let r = 13, g = 16, b = 24; // bg2
-    if (v === 1 || (v === 0 && a > 0.02)) {
-      // fading-out cells keep the color they had; approximate with last known color via v when alive
-    }
-    if (v === 1) { r = COL_P[0]; g = COL_P[1]; b = COL_P[2]; }
-    else if (v === 2) { r = COL_AI[0]; g = COL_AI[1]; b = COL_AI[2]; }
-    const o = i * 4;
-    const mix = v === 0 ? a * 0.5 : (0.4 + a * 0.6);
-    data[o] = lerp(13, r, mix);
-    data[o + 1] = lerp(16, g, mix);
-    data[o + 2] = lerp(24, b, mix);
+    const c = owner[i] === 2 ? COL_AI : COL_P;
+    const mix = v === 0 ? a * 0.55 : 0.45 + a * 0.55;
+    data[o] = 13 + (c[0] - 13) * mix;
+    data[o + 1] = 16 + (c[1] - 16) * mix;
+    data[o + 2] = 24 + (c[2] - 24) * mix;
     data[o + 3] = 255;
+    glow[o] = c[0]; glow[o + 1] = c[1]; glow[o + 2] = c[2];
+    glow[o + 3] = v === 0 ? a * a * 130 : 90 + a * 130;
   }
   state.offCtx.putImageData(state.imgData, 0, 0);
+  state.glowCtx.putImageData(state.glowData, 0, 0);
+
+  const bw = game.w, by = L.boardTop, bh = L.boardH;
+
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  const { uiTop, areaH } = boardArea(game);
-  ctx.drawImage(state.offCanvas, 0, 0, GW, GH, 0, uiTop, game.w, areaH);
+  ctx.drawImage(state.offCanvas, 0, 0, GW, GH, 0, by, bw, bh);
   ctx.restore();
-  return { uiTop, areaH };
+
+  // Blur pass. ctx.filter silently does nothing where it is unsupported; the bilinear
+  // upscale below still softens the copy, so the bloom degrades rather than disappears.
+  const bc = state.blurCanvas, bctx = state.blurCtx;
+  bctx.save();
+  bctx.filter = 'none';
+  bctx.clearRect(0, 0, bc.width, bc.height);
+  bctx.filter = 'blur(2.5px)';
+  bctx.imageSmoothingEnabled = true;
+  bctx.drawImage(state.glowCanvas, 0, 0, GW, GH, 0, 0, bc.width, bc.height);
+  bctx.filter = 'none';
+  bctx.restore();
+
+  const spread = Math.max(3, (bw / GW) * 1.5);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, by, bw, bh);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.imageSmoothingEnabled = true;
+  ctx.globalAlpha = 0.45;
+  ctx.drawImage(bc, 0, 0, bc.width, bc.height, 0, by, bw, bh);
+  ctx.globalAlpha = 0.18;
+  ctx.drawImage(bc, 0, 0, bc.width, bc.height, -spread, by - spread, bw + spread * 2, bh + spread * 2);
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = Palette.grid;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, by + 0.5, Math.max(1, bw - 1), Math.max(1, bh - 1));
+  ctx.restore();
 }
 
-function renderGhost(state, ctx, game, uiTop, areaH) {
-  if (state.sim.phase !== 'playing') return;
+function renderGhost(state, ctx, game, L) {
+  const p = game.input.pointer;
+  if (p.x === 0 && p.y === 0) return;      // pointer never moved — don't park a ghost in the corner
   const { gx, gy } = pointerToGrid(game);
   const pattern = patternById(state.selected);
-  const cells = rotatePattern(pattern.cells, state.rot);
+  const cells = rotatedCells(pattern, state.rot);
   const { w, h } = patternBounds(cells);
   const ox = gx - ((w / 2) | 0), oy = gy - ((h / 2) | 0);
-  const sx = game.w / GW, sy = areaH / GH;
+  const sx = game.w / GW, sy = L.boardH / GH;
   const affordable = state.sim.biomassP >= pattern.cost;
+  const glowColor = affordable ? Palette.accent : Palette.hot;
   ctx.save();
-  ctx.fillStyle = affordable ? 'rgba(94,242,192,0.55)' : 'rgba(255,77,109,0.5)';
-  for (const [dx, dy] of cells) {
-    const x = ox + dx, y = oy + dy;
+  ctx.beginPath();
+  ctx.rect(0, L.boardTop, game.w, L.boardH);
+  ctx.clip();
+  ctx.strokeStyle = affordable ? 'rgba(94,242,192,0.30)' : 'rgba(255,77,109,0.30)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(
+    Math.round(ox * sx) + 0.5, Math.round(L.boardTop + oy * sy) + 0.5,
+    Math.max(1, w * sx - 1), Math.max(1, h * sy - 1),
+  );
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 8;
+  ctx.globalAlpha = 0.68 + 0.22 * Math.sin(game.t * 6);
+  ctx.fillStyle = affordable ? 'rgba(94,242,192,0.75)' : 'rgba(255,77,109,0.65)';
+  for (let i = 0; i < cells.length; i++) {
+    const x = ox + cells[i][0], y = oy + cells[i][1];
     if (x < 0 || y < 0 || x >= GW || y >= GH) continue;
-    ctx.fillRect(x * sx, uiTop + y * sy, Math.max(1, sx), Math.max(1, sy));
+    ctx.fillRect(x * sx, L.boardTop + y * sy, Math.max(1, sx), Math.max(1, sy));
   }
   ctx.restore();
 }
 
-function renderTopbar(state, ctx, game) {
-  const w = game.w;
-  ctx.save();
-  ctx.fillStyle = Palette.panel;
-  ctx.fillRect(0, 0, w, 64);
-  // territory bar
-  const barX = 16, barY = 14, barW = w - 32, barH = 16;
-  roundRect(ctx, barX, barY, barW, barH, 6); ctx.fillStyle = Palette.grid; ctx.fill();
-  const pW = barW * state.sim.pctP, aW = barW * state.sim.pctAI;
-  ctx.fillStyle = `rgb(${COL_P.join(',')})`;
-  roundRect(ctx, barX, barY, pW, barH, 6); ctx.fill();
-  ctx.fillStyle = `rgb(${COL_AI.join(',')})`;
-  ctx.fillRect(barX + barW - aW, barY, aW, barH);
-  text(ctx, `YOU ${(state.sim.pctP * 100).toFixed(0)}%`, barX + 4, barY - 2, { size: 11, color: Palette.dim, baseline: 'bottom' });
-  text(ctx, `${(state.sim.pctAI * 100).toFixed(0)}% AI`, barX + barW - 4, barY - 2, { size: 11, color: Palette.dim, baseline: 'bottom', align: 'right' });
+// ---------------------------------------------------------------- top chrome
 
-  text(ctx, `LVL ${state.levelIndex + 1}/${LEVELS.length} · ${state.sim.level}`, barX, barY + barH + 6, { size: 12, color: Palette.ink, weight: 700 });
-  text(ctx, `t ${state.sim.matchTime.toFixed(1)}s`, w - barX, barY + barH + 6, { size: 12, color: Palette.dim, align: 'right' });
+function renderTop(state, ctx, game, L) {
+  const s = state.sim;
+  const pad = L.pad;
+  // One strip covers the stats AND the territory bar, so the board gets a single horizon.
+  hudStrip(ctx, game, { h: L.boardTop, fill: 'rgba(13,16,24,0.95)', border: Palette.grid });
+
+  const vs = L.compact ? 18 : Type.value;
+  const ls = L.compact ? 10 : Type.label;
+  const labelY = L.compact ? 16 : 21;
+  const gap = L.compact ? 16 : 26;
+  const mw = (chars) => chars * vs * 0.6;    // monospace advance
+  const lw = (chars) => chars * ls * 0.74;   // ...plus stat()'s 0.14em label tracking
+
+  const sel = patternById(state.selected);
+  const afford = s.biomassP >= sel.cost;
+  const lvlLabel = `LEVEL ${state.levelIndex + 1}/${LEVELS.length}`;
+  const bioStr = String(Math.floor(s.biomassP));
+  const timeStr = `${s.matchTime.toFixed(1)}s`;
+  const timeW = Math.max(mw(timeStr.length), lw(4));
+
+  // Fit the columns to the width rather than letting them collide: shrink the biomass
+  // meter first, then drop territory (the bar below already says it), then the strain name.
+  let showName = true, showTerr = true;
+  let meterW = L.compact ? 70 : 104;
+  const avail = game.w - pad * 2 - timeW - gap;
+  const measure = () => {
+    const a = showName ? Math.max(mw(s.level.length), lw(lvlLabel.length)) : Math.max(mw(3), lw(5));
+    const b = showTerr ? Math.max(mw(4), lw(9)) : 0;
+    const c = Math.max(mw(bioStr.length) + 10 + meterW, lw(7));
+    return { a, b, c, total: a + b + c + gap * (showTerr ? 2 : 1) };
+  };
+  let col = measure();
+  if (col.total > avail) { meterW = Math.max(0, meterW - (col.total - avail)); col = measure(); }
+  if (col.total > avail) { showTerr = false; col = measure(); }
+  if (col.total > avail) { showName = false; col = measure(); }
+
+  let x = pad;
+  stat(ctx, x, labelY,
+    showName ? lvlLabel : 'LEVEL',
+    showName ? String(s.level).toUpperCase() : `${state.levelIndex + 1}/${LEVELS.length}`,
+    { valueSize: vs, labelSize: ls, color: Palette.ink });
+  x += col.a + gap;
+
+  if (showTerr) {
+    stat(ctx, x, labelY, 'TERRITORY', `${Math.round(s.pctP * 100)}%`,
+      { valueSize: vs, labelSize: ls, color: Palette.accent });
+    x += col.b + gap;
+  }
+
+  stat(ctx, x, labelY, 'BIOMASS', bioStr,
+    { valueSize: vs, labelSize: ls, color: afford ? Palette.ink : Palette.warm });
+  const mx = x + mw(bioStr.length) + 10;
+  const mh = L.compact ? 7 : 8;
+  const my = labelY + 2 + vs * 0.5 - mh / 2;
+  if (meterW >= 24 && mx + meterW <= game.w - pad - timeW - 8) {
+    // Full meter = you can afford anything in the palette; the tick is the selected
+    // pattern's price, so the bar reads as "how close am I to the thing I want".
+    meter(ctx, mx, my, meterW, mh, clamp(s.biomassP / MAX_COST, 0, 1),
+      { color: afford ? Palette.accent : Palette.warm, track: 'rgba(255,255,255,0.07)' });
+    ctx.save();
+    ctx.fillStyle = afford ? 'rgba(233,237,247,0.45)' : Palette.warm;
+    ctx.fillRect(mx + meterW * clamp(sel.cost / MAX_COST, 0, 1) - 0.5, my - 3, 1, mh + 6);
+    ctx.restore();
+  }
+
+  stat(ctx, game.w - pad, labelY, 'TIME', timeStr,
+    { align: 'right', valueSize: vs, labelSize: ls, color: Palette.dim });
+
+  renderTerritoryBar(state, ctx, game, L, ls);
+}
+
+/** Two-sided share bar: both colonies push in from their own edge and meet at the front. */
+function renderTerritoryBar(state, ctx, game, L, ls) {
+  const s = state.sim;
+  const x = L.pad;
+  const w = Math.max(8, game.w - L.pad * 2);
+  const top = L.hudH;
+  const labelY = top + (L.compact ? 10 : 12);
+  const barY = top + (L.compact ? 13 : 16);
+  const barH = L.compact ? 7 : 9;
+  const r = barH / 2;
+  const pw = w * clamp(s.pctP, 0, 1);
+  const aw = w * clamp(s.pctAI, 0, 1);
+
+  text(ctx, `YOU ${Math.round(s.pctP * 100)}%`, x, labelY,
+    { size: ls, color: Palette.accent, weight: 700, baseline: 'alphabetic' });
+  text(ctx, `${Math.round(s.pctAI * 100)}% RIVAL`, x + w, labelY,
+    { size: ls, color: Palette.hot, weight: 700, align: 'right', baseline: 'alphabetic' });
+
+  if (s.domTimerP > 0 || s.domTimerAI > 0) {
+    const mine = s.domTimerP > 0;
+    const left = Math.max(0, DOMINANCE_HOLD - (mine ? s.domTimerP : s.domTimerAI));
+    text(ctx, `${mine ? 'HOLD' : 'LOSING'} ${left.toFixed(1)}s`, x + w / 2, labelY,
+      { size: ls, color: Palette.warm, weight: 700, align: 'center', baseline: 'alphabetic' });
+  }
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  roundRect(ctx, x, barY, w, barH, r);
+  ctx.fill();
+
+  if (pw > 0.5) {
+    ctx.shadowColor = Palette.accent; ctx.shadowBlur = 9;
+    ctx.fillStyle = Palette.accent;
+    roundRect(ctx, x, barY, Math.max(barH, pw), barH, r);
+    ctx.fill();
+  }
+  if (aw > 0.5) {
+    ctx.shadowColor = Palette.hot; ctx.shadowBlur = 9;
+    ctx.fillStyle = Palette.hot;
+    const rw = Math.max(barH, aw);
+    roundRect(ctx, x + w - rw, barY, rw, barH, r);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // the two win lines — reach your own and hold it
+  ctx.fillStyle = 'rgba(255,200,87,0.5)';
+  ctx.fillRect(x + w * DOMINANCE_PCT - 0.5, barY - 3, 1, barH + 6);
+  ctx.fillRect(x + w * (1 - DOMINANCE_PCT) - 0.5, barY - 3, 1, barH + 6);
+  ctx.fillStyle = 'rgba(233,237,247,0.18)';
+  ctx.fillRect(x + w / 2 - 0.5, barY - 2, 1, barH + 4);
   ctx.restore();
 }
 
-function renderPalette(state, ctx, game) {
-  const w = game.w, h = game.h;
-  const y0 = h - 86;
-  ctx.save();
-  ctx.fillStyle = Palette.panel;
-  ctx.fillRect(0, y0, w, 86);
+// ---------------------------------------------------------------- pattern palette
 
-  text(ctx, `BIOMASS ${state.sim.biomassP.toFixed(0)}`, 16, y0 + 10, { size: 13, color: Palette.accent, weight: 700 });
+function drawPatternPreview(ctx, pattern, rot, bx, by, bw, bh, color) {
+  if (bw < 5 || bh < 5) return;
+  const cells = rotatedCells(pattern, rot);
+  const b = patternBounds(cells);
+  const cs = Math.min(bw / b.w, bh / b.h);
+  const ox = bx + (bw - b.w * cs) / 2;
+  const oy = by + (bh - b.h * cs) / 2;
+  const dot = Math.max(1, cs - (cs > 3 ? 1 : 0.25));
+  ctx.save();
+  ctx.fillStyle = color;
+  for (let i = 0; i < cells.length; i++) {
+    ctx.fillRect(ox + cells[i][0] * cs, oy + cells[i][1] * cs, dot, dot);
+  }
+  ctx.restore();
+}
+
+function renderPalette(state, ctx, game, L) {
+  const s = state.sim;
+  const pad = L.pad;
+  const y0 = game.h - L.palH;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(13,16,24,0.95)';
+  ctx.fillRect(0, y0, game.w, L.palH);
+  ctx.strokeStyle = Palette.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, y0 + 0.5);
+  ctx.lineTo(game.w, y0 + 0.5);
+  ctx.stroke();
+  ctx.restore();
+
+  const ls = L.compact ? 10 : Type.label;
+  const headY = y0 + (L.compact ? 13 : 16);
+  text(ctx, 'PATTERNS', pad, headY, { size: ls, color: Palette.dim, weight: 700, baseline: 'alphabetic' });
+  const hint = game.w < 620
+    ? `ROT ${state.rot * 90}`
+    : `ROT ${state.rot * 90}  ·  R ROTATE  ·  CLICK TO STAMP`;
+  text(ctx, hint, game.w - pad, headY,
+    { size: ls, color: Palette.dim, weight: 600, align: 'right', baseline: 'alphabetic' });
 
   const n = PATTERNS.length;
-  const cellW = Math.min(150, (w - 32) / n);
+  const gap = L.compact ? 6 : 8;
+  const chipW = Math.max(20, (game.w - pad * 2 - gap * (n - 1)) / n);
+  const chipH = L.compact ? 46 : 58;
+  const chipY = y0 + (L.compact ? 19 : 25);
+  const badgeW = L.compact ? 15 : 18, badgeH = L.compact ? 13 : 15;
+
   for (let i = 0; i < n; i++) {
     const p = PATTERNS[i];
-    const x = 16 + i * cellW;
-    const y = y0 + 30;
+    const x = pad + i * (chipW + gap);
     const selected = state.selected === p.id;
-    const affordable = state.sim.biomassP >= p.cost;
-    roundRect(ctx, x, y, cellW - 8, 48, 8);
-    ctx.fillStyle = selected ? 'rgba(94,242,192,0.16)' : 'rgba(255,255,255,0.03)';
+    const afford = s.biomassP >= p.cost;
+
+    panel(ctx, x, chipY, chipW, chipH, {
+      radius: 5,
+      fill: selected ? 'rgba(94,242,192,0.10)' : afford ? 'rgba(17,22,36,0.92)' : 'rgba(10,12,18,0.85)',
+      border: selected ? Palette.accent : afford ? Palette.grid : 'rgba(120,132,156,0.22)',
+      glowColor: selected ? Palette.accent : null,
+      glowBlur: 16,
+    });
+
+    const ink = selected ? Palette.accent : afford ? Palette.ink : 'rgba(120,132,156,0.72)';
+    const bx = x + (L.compact ? 6 : 9);
+    const by = chipY + (L.compact ? 6 : 8);
+
+    ctx.save();
+    roundRect(ctx, bx, by, badgeW, badgeH, 3);
+    ctx.fillStyle = selected ? 'rgba(94,242,192,0.22)' : 'rgba(255,255,255,0.06)';
     ctx.fill();
-    if (selected) { ctx.strokeStyle = Palette.accent; ctx.lineWidth = 1.5; ctx.stroke(); }
-    text(ctx, `${p.key}`, x + 8, y + 6, { size: 11, color: Palette.dim, weight: 700 });
-    text(ctx, p.name, x + 8, y + 18, { size: 13, color: affordable ? Palette.ink : Palette.dim, weight: 700 });
-    text(ctx, `${p.cost}bm`, x + 8, y + 34, { size: 11, color: affordable ? Palette.accent2 : Palette.hot });
+    ctx.restore();
+    text(ctx, p.key, bx + badgeW / 2, by + badgeH - (L.compact ? 3 : 4), {
+      size: Type.label, color: selected ? Palette.accent : afford ? Palette.dim : 'rgba(120,132,156,0.7)',
+      align: 'center', baseline: 'alphabetic', weight: 700,
+    });
+    text(ctx, p.name, bx + badgeW + 6, by + badgeH - (L.compact ? 2 : 3),
+      { size: Type.small, color: ink, weight: 700, baseline: 'alphabetic' });
+    text(ctx, `${p.cost} BM`, bx, chipY + chipH - (L.compact ? 8 : 11), {
+      size: L.compact ? Type.label : Type.small,
+      color: afford ? Palette.accent2 : Palette.hot, weight: 700, baseline: 'alphabetic',
+    });
+
+    const pvW = Math.min(L.compact ? 24 : 32, chipW * 0.3);
+    const pvH = L.compact ? 14 : 20;
+    drawPatternPreview(
+      ctx, p, state.rot,
+      x + chipW - (L.compact ? 6 : 9) - pvW,
+      chipY + chipH - (L.compact ? 5 : 8) - pvH,
+      pvW, pvH,
+      selected ? Palette.accent : afford ? 'rgba(233,237,247,0.6)' : 'rgba(120,132,156,0.35)',
+    );
   }
-  text(ctx, 'R rotate · click to stamp', w - 16, y0 + 10, { size: 11, color: Palette.dim, align: 'right' });
-  ctx.restore();
 }
 
+// ---------------------------------------------------------------- overlays
+
 function renderIntro(state, ctx, game) {
-  const w = game.w, h = game.h;
-  ctx.save();
-  ctx.fillStyle = 'rgba(7,8,13,0.92)';
-  ctx.fillRect(0, 0, w, h);
-  text(ctx, 'PETRI', w / 2, h * 0.28, { size: 48, color: Palette.ink, align: 'center', weight: 800, font: 'Georgia, "Times New Roman", serif' });
-  text(ctx, 'You place seeds. The seeds live on their own — spread, fight, and take the grid.', w / 2, h * 0.28 + 46, { size: 15, color: Palette.dim, align: 'center' });
-  text(ctx, 'Stamp Conway patterns with 1–6, rotate with R, click to place. Control 70% of the grid to win.', w / 2, h * 0.28 + 70, { size: 13, color: Palette.dim, align: 'center' });
-  text(ctx, 'PRESS SPACE', w / 2, h * 0.6, { size: 20, color: Palette.accent, align: 'center', weight: 700 });
-  ctx.restore();
+  titleCard(ctx, game, {
+    title: 'PETRI',
+    tagline: "seed it, don't steer it",
+    lines: [
+      'You never move a unit. You spend biomass to stamp living patterns onto',
+      'the dish, and they spread, collide and consume on their own.',
+      '',
+      '1-6 pick a pattern  ·  R rotates it  ·  click stamps it',
+      `Hold ${Math.round(DOMINANCE_PCT * 100)}% of the living cells for ${DOMINANCE_HOLD}s to take the dish.`,
+    ],
+    prompt: 'PRESS SPACE',
+    t: game.t,
+    accent: Palette.accent,
+  });
 }
 
 function renderEnd(state, ctx, game) {
-  const w = game.w, h = game.h;
-  const won = state.sim.phase === 'won';
-  ctx.save();
-  ctx.fillStyle = 'rgba(7,8,13,0.85)';
-  ctx.fillRect(0, 0, w, h);
-  text(ctx, won ? 'TERRITORY SECURED' : 'COLONY LOST', w / 2, h * 0.42, {
-    size: 36, align: 'center', weight: 800, color: won ? Palette.accent : Palette.hot,
-    font: 'Georgia, "Times New Roman", serif',
+  const s = state.sim;
+  const won = s.phase === 'won';
+  titleCard(ctx, game, {
+    title: won ? 'TERRITORY SECURED' : 'COLONY LOST',
+    tagline: `${s.level}  ·  level ${state.levelIndex + 1} of ${LEVELS.length}`,
+    lines: [
+      won
+        ? `cleared in ${s.matchTime.toFixed(1)}s`
+        : `the rival colony took the dish in ${s.matchTime.toFixed(1)}s`,
+      `final share  ·  you ${Math.round(s.pctP * 100)}%  ·  rival ${Math.round(s.pctAI * 100)}%`,
+      `best level ${state.bestLevel}/${LEVELS.length}` + (state.fastestWin ? `  ·  fastest win ${state.fastestWin}s` : ''),
+    ],
+    prompt: won && state.levelIndex < LEVELS.length - 1 ? 'PRESS SPACE FOR THE NEXT COLONY' : 'PRESS SPACE TO RETRY',
+    t: game.t,
+    accent: won ? Palette.accent : Palette.hot,
   });
-  text(ctx, won ? `${state.sim.level} cleared in ${state.sim.matchTime.toFixed(1)}s` : `${state.sim.level} — the AI colony took the grid`, w / 2, h * 0.42 + 40, { size: 15, align: 'center', color: Palette.dim });
-  text(ctx, `best level ${state.bestLevel}/${LEVELS.length}` + (state.fastestWin ? ` · fastest win ${state.fastestWin}s` : ''), w / 2, h * 0.42 + 64, { size: 12, align: 'center', color: Palette.dim });
-  text(ctx, won && state.levelIndex < LEVELS.length - 1 ? 'PRESS SPACE FOR NEXT COLONY' : 'PRESS SPACE TO RETRY', w / 2, h * 0.6, { size: 16, align: 'center', color: Palette.ink, weight: 700 });
-  ctx.restore();
 }
 
 function render(state, ctx, game) {
-  if (!state.introDone) { renderIntro(state, ctx, game); return; }
-  const { uiTop, areaH } = renderGrid(state, ctx, game);
-  renderGhost(state, ctx, game, uiTop, areaH);
-  renderTopbar(state, ctx, game);
-  renderPalette(state, ctx, game);
-  if (state.sim.phase !== 'playing') renderEnd(state, ctx, game);
+  const L = layout(game);
+  renderBoard(state, ctx, game, L);
+  if (state.introDone && state.sim.phase === 'playing') renderGhost(state, ctx, game, L);
+  ctx.save();
+  game.fx.draw(ctx);
+  ctx.restore();
+  // Vignette lands on the dish while the chrome, drawn on top of it, stays crisp.
+  vignette(ctx, game, 0.45);
+  renderTop(state, ctx, game, L);
+  renderPalette(state, ctx, game, L);
+  if (!state.introDone) renderIntro(state, ctx, game);
+  else if (state.sim.phase !== 'playing') renderEnd(state, ctx, game);
 }
 
 // ---------------------------------------------------------------- boot

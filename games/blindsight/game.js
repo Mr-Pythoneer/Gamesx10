@@ -8,6 +8,7 @@
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, lerp, text, allFinite, TAU, randomSeedString,
+  Type, hudStrip, stat, meter, orb, vignette, titleCard,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, teleport,
@@ -22,9 +23,20 @@ import {
 const VOID = '#04050a';
 const ECHO_COOL = [110, 245, 255];
 const ECHO_WARM = [130, 255, 205];
+const CORE_TINT = [235, 255, 250];
 const HOT = [255, 77, 109];
+const ACCENT_RGB = [94, 242, 192];     // Palette.accent
+const ACCENT2_RGB = [59, 167, 255];    // Palette.accent2
 
 const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+// Chrome geometry. The strip is deliberately slim and low-opacity: this game is
+// dark by design, so the HUD has to structure the frame without lighting the room.
+const HUD = 46;
+const HUD_LABEL_Y = 17;   // value baseline lands at 17 + valueSize + 2, inside 46px
+const TOPPAD = HUD + 12;
+const BOTPAD = 60;
+const DREAD_CAP = 0.26;   // the danger wash must never fully obscure the playfield
 
 // ---------------------------------------------------------------- state
 
@@ -71,11 +83,12 @@ function resetRun(s, g, seed) {
 
 function computeView(g, sim) {
   const worldW = sim.tw * TILE, worldH = sim.th * TILE;
-  const s = Math.max(0.15, Math.min((g.w - 34) / worldW, (g.h - 74) / worldH));
+  const avail = g.h - TOPPAD - BOTPAD;
+  const s = Math.max(0.15, Math.min((g.w - 36) / worldW, avail / worldH));
   return {
     s,
     ox: (g.w - worldW * s) / 2,
-    oy: 34 + (g.h - 74 - worldH * s) / 2,
+    oy: TOPPAD + Math.max(0, (avail - worldH * s) / 2),
   };
 }
 const sx = (v, x) => v.ox + x * v.s;
@@ -265,10 +278,19 @@ function update(s, dt, g) {
 
 // ---------------------------------------------------------------- render
 
-const NBUCKET = 6;
+const NBUCKET = 12;
 const faceBuckets = [];
 for (let i = 0; i < NBUCKET; i++) faceBuckets.push([]);
-const echoBuckets = [[], [], [], []];
+const echoBuckets = [[], [], [], [], []];
+
+// A revealed surface is drawn as three stacked strokes: a wide dim halo, a mid
+// glow, and a thin bright core tinted toward white. One flat line reads as a plot;
+// this reads as drawn light.
+const WALL_PASSES = [
+  { w: 8.0, min: 4, a: 0.05, floor: 0.00, mix: 0.00 },
+  { w: 3.4, min: 2, a: 0.17, floor: 0.05, mix: 0.14 },
+  { w: 1.15, min: 1, a: 0.88, floor: 0.12, mix: 0.45 },
+];
 
 function drawGeometry(ctx, s, v) {
   const sim = s.sim, rv = sim.reveal, tw = sim.tw;
@@ -292,21 +314,24 @@ function drawGeometry(ctx, s, v) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
-  // soft bloom pass, then the crisp line
-  for (let pass = 0; pass < 2; pass++) {
-    ctx.lineWidth = pass === 0 ? Math.max(3, 5 * v.s) : Math.max(1, 1.5 * v.s);
+  for (let pi = 0; pi < WALL_PASSES.length; pi++) {
+    const P = WALL_PASSES[pi];
+    ctx.lineWidth = Math.max(P.min, P.w * v.s);
     for (let b = 0; b < NBUCKET; b++) {
       const seg = faceBuckets[b];
       if (!seg.length) continue;
       const t = (b + 0.5) / NBUCKET;
+      const fade = Math.pow(t, 0.8);
       const col = [
-        Math.round(lerp(ECHO_COOL[0], ECHO_WARM[0], t)),
-        Math.round(lerp(ECHO_COOL[1], ECHO_WARM[1], t)),
-        Math.round(lerp(ECHO_COOL[2], ECHO_WARM[2], t)),
+        Math.round(lerp(lerp(ECHO_COOL[0], ECHO_WARM[0], t), CORE_TINT[0], P.mix)),
+        Math.round(lerp(lerp(ECHO_COOL[1], ECHO_WARM[1], t), CORE_TINT[1], P.mix)),
+        Math.round(lerp(lerp(ECHO_COOL[2], ECHO_WARM[2], t), CORE_TINT[2], P.mix)),
       ];
-      const a = pass === 0 ? t * 0.1 : 0.1 + t * 0.72;
-      ctx.strokeStyle = rgba(col, a);
+      const a = P.a * (P.floor + (1 - P.floor) * fade);
+      if (a <= 0.004) continue;
+      ctx.strokeStyle = rgba(col, a.toFixed(4));
       ctx.beginPath();
       for (let i = 0; i < seg.length; i += 4) {
         ctx.moveTo(seg[i], seg[i + 1]);
@@ -334,13 +359,17 @@ function drawEchoes(ctx, s, v) {
   }
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const sz = Math.max(1.6, 2.3 * v.s);
+  const sz = Math.max(0.9, 1.25 * v.s);
   for (let b = 0; b < echoBuckets.length; b++) {
     const pts = echoBuckets[b];
     if (!pts.length) continue;
-    ctx.fillStyle = rgba(ECHO_WARM, (b + 0.5) / echoBuckets.length * 0.9);
+    const f = (b + 0.5) / echoBuckets.length;
+    ctx.fillStyle = rgba(ECHO_WARM, (f * 0.82).toFixed(4));
     ctx.beginPath();
-    for (let i = 0; i < pts.length; i += 2) ctx.rect(pts[i] - sz / 2, pts[i + 1] - sz / 2, sz, sz);
+    for (let i = 0; i < pts.length; i += 2) {
+      ctx.moveTo(pts[i] + sz, pts[i + 1]);
+      ctx.arc(pts[i], pts[i + 1], sz, 0, TAU);
+    }
     ctx.fill();
   }
   ctx.restore();
@@ -351,18 +380,33 @@ function drawRings(ctx, s, v) {
   if (!rings.length) return;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
   for (let i = 0; i < rings.length; i++) {
     const R = rings[i];
     const t = clamp(R.r / R.range, 0, 1);
-    const a = (1 - t) * (1 - t) * (R.kind === 'wide' ? 0.5 : 0.32);
+    const a = Math.pow(1 - t, 1.7) * (R.kind === 'wide' ? 0.55 : 0.36);
     if (a <= 0.01 || R.r <= 0) continue;
-    ctx.strokeStyle = rgba(ECHO_WARM, a);
-    ctx.lineWidth = Math.max(1, (R.kind === 'wide' ? 2.4 : 1.6) * v.s);
+    const X = sx(v, R.x), Y = sy(v, R.y);
+    const rr = Math.max(0.5, R.r * v.s);
+    const band = Math.max(1.4, (R.kind === 'wide' ? 3.0 : 2.1) * v.s);
+
+    // A radial gradient across the stroke's own width: transparent behind, bright
+    // at the leading edge, transparent in front. That is what makes it read as a
+    // wavefront rather than a hard-edged circle.
+    const r0 = Math.max(0, rr - band * 1.8);
+    const r1 = rr + band * 1.0;
+    const gr = ctx.createRadialGradient(X, Y, r0, X, Y, r1);
+    gr.addColorStop(0, rgba(ECHO_WARM, 0));
+    gr.addColorStop(0.55, rgba(ECHO_WARM, (a * 0.32).toFixed(4)));
+    gr.addColorStop(0.86, rgba(ECHO_WARM, a.toFixed(4)));
+    gr.addColorStop(1, rgba(ECHO_WARM, 0));
+    ctx.strokeStyle = gr;
+    ctx.lineWidth = band * 2.6;
     ctx.beginPath();
     if (R.spread >= TAU - 1e-6) {
-      ctx.arc(sx(v, R.x), sy(v, R.y), R.r * v.s, 0, TAU);
+      ctx.arc(X, Y, rr, 0, TAU);
     } else {
-      ctx.arc(sx(v, R.x), sy(v, R.y), R.r * v.s, R.dir - R.spread / 2, R.dir + R.spread / 2);
+      ctx.arc(X, Y, rr, R.dir - R.spread / 2, R.dir + R.spread / 2);
     }
     ctx.stroke();
   }
@@ -459,7 +503,7 @@ function drawPlayer(ctx, s, v, t) {
   const X = sx(v, p.x), Y = sy(v, p.y);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const rad = SELF_GLOW_R * v.s;
+  const rad = Math.max(1, SELF_GLOW_R * v.s);
   const gr = ctx.createRadialGradient(X, Y, 0, X, Y, rad);
   gr.addColorStop(0, 'rgba(120,255,220,0.15)');
   gr.addColorStop(0.4, 'rgba(90,200,255,0.05)');
@@ -467,11 +511,8 @@ function drawPlayer(ctx, s, v, t) {
   ctx.fillStyle = gr;
   ctx.fillRect(X - rad, Y - rad, rad * 2, rad * 2);
 
-  ctx.fillStyle = `rgba(190,255,240,${0.8 + 0.2 * Math.sin(t * 5)})`;
   const r = Math.max(2, PLAYER_R * 0.62 * v.s);
-  ctx.beginPath();
-  ctx.arc(X, Y, r, 0, TAU);
-  ctx.fill();
+  orb(ctx, X, Y, r, `rgba(186,255,238,${(0.82 + 0.18 * Math.sin(t * 5)).toFixed(3)})`, { glow: 0.55 });
 
   ctx.strokeStyle = 'rgba(150,240,255,0.55)';
   ctx.lineWidth = Math.max(1, 1.3 * v.s);
@@ -482,24 +523,33 @@ function drawPlayer(ctx, s, v, t) {
   ctx.restore();
 }
 
-function drawVignette(ctx, g, s) {
-  const cx = g.w / 2, cy = g.h / 2;
-  const R = Math.hypot(cx, cy);
-  const gr = ctx.createRadialGradient(cx, cy, R * 0.32, cx, cy, R);
-  gr.addColorStop(0, 'rgba(0,0,0,0)');
-  gr.addColorStop(1, 'rgba(0,0,0,0.82)');
-  ctx.fillStyle = gr;
-  ctx.fillRect(0, 0, g.w, g.h);
+/**
+ * The room is already black — a heavy vignette on top of that just eats the game.
+ * So: a light vignette for framing, and a danger wash that is hard-capped in alpha
+ * and pushed to the edges so it can never hide what you are looking at.
+ * (This only shapes the RENDER. sim.dread itself is untouched.)
+ */
+function drawAtmosphere(ctx, g, s) {
+  vignette(ctx, g, 0.2);
 
   const dread = s.sim.dread;
+  ctx.save();
   if (dread > 0.03) {
+    const cx = g.w / 2, cy = g.h / 2;
+    const R = Math.max(1, Math.hypot(cx, cy));
     const pulse = 0.5 + 0.5 * Math.sin(g.t * lerp(3, 9, dread));
-    const gr2 = ctx.createRadialGradient(cx, cy, R * 0.42, cx, cy, R);
-    gr2.addColorStop(0, 'rgba(255,40,70,0)');
-    gr2.addColorStop(1, `rgba(255,40,70,${dread * dread * 0.5 * (0.5 + pulse * 0.5)})`);
-    ctx.fillStyle = gr2;
+    const a = Math.min(DREAD_CAP, dread * dread * 0.42 * (0.55 + pulse * 0.45));
+    const gr = ctx.createRadialGradient(cx, cy, R * 0.46, cx, cy, R);
+    gr.addColorStop(0, 'rgba(255,40,70,0)');
+    gr.addColorStop(1, `rgba(255,40,70,${a.toFixed(4)})`);
+    ctx.fillStyle = gr;
     ctx.fillRect(0, 0, g.w, g.h);
   }
+  if (s.flash > 0) {
+    ctx.fillStyle = `rgba(255,60,90,${(s.flash * 0.26).toFixed(4)})`;
+    ctx.fillRect(0, 0, g.w, g.h);
+  }
+  ctx.restore();
 }
 
 function fmtTime(t) {
@@ -510,121 +560,150 @@ function fmtTime(t) {
 
 function drawHud(ctx, s, g) {
   const sim = s.sim;
-  const bt = Store.get('time:' + s.seedStr, null);
-  const bs = Store.get('shards:' + s.seedStr, null);
+  const compact = g.w < 760;
+  const tiny = g.w < 520;
+  const vs = tiny ? 17 : 20;
+  const vs2 = tiny ? 12 : Type.body;
 
-  text(ctx, `SHARDS ${sim.collected}/${sim.shards.length}`, 14, 12, {
-    size: 13, weight: 700, color: sim.exit.active ? Palette.accent : Palette.ink,
+  // Slim, low-opacity strip: structure without light.
+  hudStrip(ctx, g, { h: HUD, fill: 'rgba(13,16,24,0.55)' });
+
+  stat(ctx, 18, HUD_LABEL_Y, 'shards', `${sim.collected}/${sim.shards.length}`, {
+    color: sim.exit.active ? Palette.accent : Palette.ink, valueSize: vs,
   });
-  text(ctx, fmtTime(sim.time), g.w / 2, 12, { size: 13, color: Palette.dim, align: 'center' });
-  text(ctx, `SEED ${s.seedStr}`, g.w - 14, 12, { size: 12, color: Palette.dim, align: 'right' });
+  stat(ctx, 18 + (tiny ? 96 : 128), HUD_LABEL_Y, 'time', fmtTime(sim.time), {
+    color: Palette.ink, valueSize: vs,
+  });
 
-  const bestLine = `BEST ${bt === null ? '—' : fmtTime(bt)}  ·  ${bs === null ? 0 : bs} SHARDS`;
-  text(ctx, bestLine, g.w - 14, 28, { size: 10, color: Palette.dim, align: 'right', alpha: 0.7 });
+  stat(ctx, g.w - 18, HUD_LABEL_Y, 'seed', s.seedStr, {
+    align: 'right', valueSize: vs2, color: Palette.dim,
+  });
+  if (!compact) {
+    const bt = Store.get('time:' + s.seedStr, null);
+    stat(ctx, g.w - 122, HUD_LABEL_Y, 'best', bt === null ? '—' : fmtTime(bt), {
+      align: 'right', valueSize: vs2, color: Palette.dim,
+    });
+  }
 
-  // ping cooldown meters
-  const bw = 92, bh = 4, bx = 14, by = g.h - 22;
-  const bars = [
-    ['WIDE', 1 - clamp(sim.cool.wide / PING.wide.cool, 0, 1), Palette.accent],
-    ['NARROW', 1 - clamp(sim.cool.narrow / PING.narrow.cool, 0, 1), Palette.accent2],
+  // ping readiness, bottom-left on the same 18px gutter as the strip
+  const mw = compact ? 76 : 98, mh = 5, mx = 18 + 58;
+  const rows = [
+    ['wide', 1 - clamp(sim.cool.wide / PING.wide.cool, 0, 1), ACCENT_RGB],
+    ['narrow', 1 - clamp(sim.cool.narrow / PING.narrow.cool, 0, 1), ACCENT2_RGB],
   ];
-  for (let i = 0; i < bars.length; i++) {
-    const [label, frac, col] = bars[i];
-    const y = by + i * 11;
-    text(ctx, label, bx, y - 3, { size: 9, color: Palette.dim, alpha: 0.75 });
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    ctx.fillRect(bx + 46, y, bw, bh);
-    ctx.fillStyle = col;
-    ctx.globalAlpha = frac >= 1 ? 0.9 : 0.4;
-    ctx.fillRect(bx + 46, y, bw * frac, bh);
-    ctx.globalAlpha = 1;
+  for (let i = 0; i < rows.length; i++) {
+    const label = rows[i][0], frac = rows[i][1], col = rows[i][2];
+    const y = g.h - 30 + i * 14;
+    text(ctx, label.toUpperCase(), 18, y + mh / 2, {
+      size: Type.micro, color: Palette.dim, alpha: 0.75, baseline: 'middle',
+    });
+    meter(ctx, mx, y, mw, mh, frac, {
+      color: rgba(col, frac >= 1 ? 0.92 : 0.42),
+      track: 'rgba(255,255,255,0.05)',
+      radius: mh / 2,
+      glow: frac >= 1,
+    });
   }
 
   if (s.hintT > 0 && s.phase === 'play') {
-    const a = clamp(s.hintT / 1.5, 0, 1) * 0.85;
-    text(ctx, 'SPACE = loud ping (it hears you)   ·   F = quiet cone   ·   SHIFT = sneak',
-      g.w / 2, g.h - 16, { size: 11, color: Palette.dim, align: 'center', alpha: a });
+    const a = clamp(s.hintT / 1.5, 0, 1) * 0.8;
+    const line = tiny ? 'SPACE ping  ·  F cone  ·  SHIFT sneak'
+      : compact ? 'SPACE loud ping  ·  F quiet cone  ·  SHIFT sneak'
+        : 'SPACE = loud ping (it hears you)   ·   F = quiet cone   ·   SHIFT = sneak';
+    text(ctx, line, g.w / 2, g.h - 46, {
+      size: compact ? Type.label : Type.small,
+      color: Palette.dim, align: 'center', baseline: 'middle', alpha: a,
+    });
   }
 }
 
-function drawIntro(ctx, s, g) {
-  ctx.fillStyle = 'rgba(4,5,10,0.9)';
-  ctx.fillRect(0, 0, g.w, g.h);
-  const cy = g.h / 2;
-  const t = g.t;
-
-  // decorative sweep so the idea reads before you press anything
+/** A slow expanding ring over the card, so the idea reads before you press anything. */
+function introSweep(ctx, g, t) {
+  const span = Math.max(80, Math.min(g.w, g.h) * 0.46);
+  const r = (t * 90) % span;
+  const a = 0.14 * (1 - r / span);
+  if (a <= 0.004) return;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const r = ((t * 90) % 260);
-  ctx.strokeStyle = rgba(ECHO_WARM, Math.max(0, 0.4 * (1 - r / 260)));
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = rgba(ECHO_WARM, a.toFixed(4));
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(g.w / 2, cy - 96, r, 0, TAU);
+  ctx.arc(g.w / 2, g.h / 2, Math.max(0.5, r), 0, TAU);
   ctx.stroke();
   ctx.restore();
+}
 
-  text(ctx, 'BLINDSIGHT', g.w / 2, cy - 52, { size: 34, color: Palette.accent, align: 'center', weight: 700 });
-  text(ctx, 'You are blind. Every ping shows you the maze — and shows the maze where you are.',
-    g.w / 2, cy - 8, { size: 13, color: Palette.ink, align: 'center' });
-  text(ctx, `Find ${SHARD_COUNT} shards, then reach the exit. Something in here hunts by sound.`,
-    g.w / 2, cy + 14, { size: 12, color: Palette.dim, align: 'center' });
-  text(ctx, 'WASD / arrows move   ·   SPACE loud ping   ·   F quiet cone ping   ·   SHIFT sneak',
-    g.w / 2, cy + 48, { size: 12, color: Palette.dim, align: 'center' });
-  text(ctx, `R restart seed   ·   N new seed   ·   SEED ${s.seedStr}`,
-    g.w / 2, cy + 68, { size: 11, color: Palette.dim, align: 'center', alpha: 0.75 });
-  const p = 0.5 + 0.5 * Math.sin(t * 3);
-  text(ctx, 'PRESS SPACE', g.w / 2, cy + 104, {
-    size: 14, color: Palette.warm, align: 'center', weight: 700, alpha: 0.35 + p * 0.65,
+function drawIntro(ctx, s, g) {
+  const compact = g.w < 820;
+  titleCard(ctx, g, {
+    title: 'BLINDSIGHT',
+    tagline: compact
+      ? 'Ping to see — it hears every ping.'
+      : 'You are blind. Every ping shows you the maze — and shows the maze where you are.',
+    lines: compact
+      ? [
+        `Find ${SHARD_COUNT} shards, then reach the exit.`,
+        'WASD move  ·  SPACE loud ping  ·  F cone',
+        'SHIFT sneak  ·  R retry  ·  N new seed',
+        `SEED ${s.seedStr}`,
+      ]
+      : [
+        `Find ${SHARD_COUNT} shards, then reach the exit. Something in here hunts by sound.`,
+        'WASD / arrows move   ·   SPACE loud ping   ·   F quiet cone   ·   SHIFT sneak',
+        `R restart seed   ·   N new seed   ·   SEED ${s.seedStr}`,
+      ],
+    prompt: 'PRESS SPACE',
+    t: g.t,
+    accent: Palette.accent,
   });
+  introSweep(ctx, g, g.t);
 }
 
 function drawEnd(ctx, s, g) {
   const won = s.phase === 'won';
   const a = clamp(s.endT / 0.5, 0, 1);
-  ctx.fillStyle = `rgba(4,5,10,${0.82 * a})`;
-  ctx.fillRect(0, 0, g.w, g.h);
-  const cy = g.h / 2;
   const bt = Store.get('time:' + s.seedStr, null);
-  text(ctx, won ? 'ESCAPED' : 'CAUGHT', g.w / 2, cy - 40, {
-    size: 34, color: won ? Palette.accent : Palette.hot, align: 'center', weight: 700, alpha: a,
+  const lines = [`${s.sim.collected}/${s.sim.shards.length} shards  ·  seed ${s.seedStr}`];
+  if (bt !== null) lines.push(`best on this seed  ${fmtTime(bt)}`);
+
+  ctx.save();
+  ctx.globalAlpha = a;
+  titleCard(ctx, g, {
+    title: won ? 'ESCAPED' : 'CAUGHT',
+    tagline: won ? fmtTime(s.sim.time) : `survived ${fmtTime(s.sim.time)}`,
+    lines,
+    prompt: a > 0.9 ? 'SPACE / R  retry seed      N  new seed' : null,
+    t: g.t,
+    accent: won ? Palette.accent : Palette.hot,
   });
-  text(ctx, won
-    ? `${fmtTime(s.sim.time)}  ·  ${s.sim.collected}/${s.sim.shards.length} shards`
-    : `${s.sim.collected}/${s.sim.shards.length} shards  ·  survived ${fmtTime(s.sim.time)}`,
-  g.w / 2, cy + 2, { size: 13, color: Palette.ink, align: 'center', alpha: a });
-  if (won && bt !== null) {
-    text(ctx, `best on ${s.seedStr}: ${fmtTime(bt)}`, g.w / 2, cy + 24, {
-      size: 11, color: Palette.dim, align: 'center', alpha: a * 0.85,
-    });
-  }
-  text(ctx, 'SPACE / R  retry this seed        N  new seed', g.w / 2, cy + 58, {
-    size: 12, color: Palette.dim, align: 'center', alpha: a,
-  });
+  ctx.restore();
 }
 
 function render(s, ctx, g) {
   const v = computeView(g, s.sim);
   s.view = v;
 
+  ctx.save();
   ctx.fillStyle = VOID;
   ctx.fillRect(0, 0, g.w, g.h);
+  ctx.restore();
 
+  // The playfield is clipped to the band below the strip, so nothing the maze
+  // throws outward (rings, halos, particles) can ever paint over the HUD.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, HUD, g.w, Math.max(0, g.h - HUD));
+  ctx.clip();
   drawGeometry(ctx, s, v);
   drawEchoes(ctx, s, v);
   drawRings(ctx, s, v);
   drawShards(ctx, s, v, g.t);
   drawHunter(ctx, s, v, g.t);
   if (s.phase !== 'caught') drawPlayer(ctx, s, v, g.t);
-
   FX.draw(ctx);
-  drawVignette(ctx, g, s);
+  ctx.restore();
 
-  if (s.flash > 0) {
-    ctx.fillStyle = `rgba(255,60,90,${s.flash * 0.35})`;
-    ctx.fillRect(0, 0, g.w, g.h);
-  }
-
+  drawAtmosphere(ctx, g, s);
   drawHud(ctx, s, g);
   if (s.phase === 'intro') drawIntro(ctx, s, g);
   else if (s.phase === 'caught' || s.phase === 'won') drawEnd(ctx, s, g);

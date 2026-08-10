@@ -10,7 +10,8 @@
 
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
-  clamp, text, roundRect, allFinite, TAU, randomSeedString,
+  clamp, approach, text, roundRect, allFinite, TAU, randomSeedString,
+  Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, addTile, findWord, settle, tileById, totalKE, maxOverlap, outOfBounds,
@@ -24,19 +25,47 @@ const RARE = 'jqxz';
 
 // ---------------------------------------------------------------- view
 
-/** The jar keeps its aspect and is letterboxed into whatever canvas we get. */
+/**
+ * Three-column layout: STATUS panel | jar | WORDS FOUND panel, with a HUD strip
+ * above and a dedicated word/hint bar below.
+ *
+ * The jar is the physics world, so its 420x580 aspect is not negotiable — it is
+ * always as tall as the canvas allows. Everything that used to be dead black to
+ * either side is now real chrome, which is the whole point: a fixed-aspect column
+ * floating in a void reads as unfinished no matter how good the pile looks.
+ *
+ * ox/oy/scale keep their exact old meaning (screen origin + scale of world 0,0),
+ * so toWorldX/toWorldY and every caller of them stay coherent.
+ */
 function viewOf(g) {
-  const padX = 12;
-  const padTop = clamp(g.h * 0.1, 22, 54);
-  const padBot = clamp(g.h * 0.04, 8, 22);
-  const availW = Math.max(60, g.w - padX * 2);
-  const availH = Math.max(60, g.h - padTop - padBot);
-  const scale = Math.min(availW / WORLD_W, availH / WORLD_H);
+  const compact = g.h < 560 || g.w < 640;
+  const hudH = compact ? 46 : HUD_H;
+  const barH = g.h < 340 ? 0 : (compact ? 34 : 46);
+  const gapTop = compact ? 8 : 14;
+  const gapBot = compact ? 8 : 12;
+  const availH = Math.max(60, g.h - hudH - gapTop - barH - gapBot);
+
+  let scale = availH / WORLD_H;
+  const maxJarW = Math.max(60, g.w - 20);
+  if (WORLD_W * scale > maxJarW) scale = maxJarW / WORLD_W;
+  const jarW = WORLD_W * scale;
+  const jarH = WORLD_H * scale;
+
+  const gutter = compact ? 12 : 18;
+  const margin = compact ? 12 : 22;
+  let panelW = Math.floor((g.w - margin * 2 - gutter * 2 - jarW) / 2);
+  panelW = panelW < 136 ? 0 : Math.min(panelW, 420);
+
+  const clusterW = jarW + (panelW ? (panelW + gutter) * 2 : 0);
+  const left = Math.round((g.w - clusterW) / 2);
+  const oy = Math.round(hudH + gapTop + (availH - jarH) / 2);
+
   return {
     scale,
-    ox: (g.w - WORLD_W * scale) / 2,
-    oy: padTop + (availH - WORLD_H * scale) / 2,
-    padTop,
+    ox: Math.round(left + (panelW ? panelW + gutter : 0)),
+    oy,
+    jarW, jarH, hudH, barH, panelW, gutter, left, clusterW, compact,
+    barY: barH ? Math.min(g.h - barH - 4, Math.round(oy + jarH + gapBot)) : 0,
   };
 }
 
@@ -53,6 +82,8 @@ function init(g) {
     sim: makeSim(g.seed),
     view: viewOf(g),
     pops: [],
+    found: [],                      // render-only log of cleared words
+    prox: 0,                        // smoothed "how close is the pile to the line"
     best: Store.get('best', 0),
     bestWord: Store.get('longest', ''),
     swallow: false,
@@ -72,6 +103,8 @@ function restartRun(s, g) {
   s.sim = makeSim(nextSeed(s));
   s.phase = 'play';
   s.pops.length = 0;
+  s.found.length = 0;
+  s.prox = 0;
   s.overT = 0;
   s.flash = 0;
   s.goodFlash = 0;
@@ -93,6 +126,8 @@ function handleEvents(s, g) {
       Sound.tone({ freq: 240, dur: 0.05, type: 'square', gain: 0.05 });
     } else if (e.type === 'clear') {
       const mult = chainMult(e.chain);
+      s.found.unshift({ word: e.word, gain: e.gain, chain: e.chain });
+      if (s.found.length > 16) s.found.pop();
       Sound.ok();
       for (let i = 0; i < e.word.length; i++) {
         Sound.tone({
@@ -138,9 +173,19 @@ function handleEvents(s, g) {
   }
 }
 
+/** 0 = pile is low and safe, 1 = the resting pile has reached the top line. */
+function pileProximity(sim) {
+  let top = WORLD_H;
+  for (const t of sim.tiles) {
+    if ((t.asleep || t.still > 8) && t.y - t.r < top) top = t.y - t.r;
+  }
+  return clamp(1 - (top - DANGER_Y) / 240, 0, 1);
+}
+
 function update(s, dt, g) {
   s.view = viewOf(g);
   s.t += dt;
+  s.prox = approach(s.prox, pileProximity(s.sim), 0.06, dt);
   if (s.flash > 0) s.flash = Math.max(0, s.flash - dt * 2.2);
   if (s.goodFlash > 0) s.goodFlash = Math.max(0, s.goodFlash - dt * 3.4);
   if (s.thudT > 0) s.thudT -= dt;
@@ -199,6 +244,43 @@ function tileInk(letter) {
   return Palette.dim;
 }
 
+// Tile gradients are defined in the tile's own local space, and every tile shares
+// one radius — so a single cached pair covers the whole pile instead of allocating
+// 132 gradients a frame.
+const _grads = { r: -1, base: null, sel: null };
+function tileGrads(ctx, R) {
+  if (_grads.r !== R) {
+    const base = ctx.createRadialGradient(-R * 0.34, -R * 0.44, R * 0.08, 0, 0, R * 1.3);
+    base.addColorStop(0, '#3a4767');
+    base.addColorStop(0.5, '#1d2537');
+    base.addColorStop(1, '#0c111e');
+    const sel = ctx.createRadialGradient(-R * 0.34, -R * 0.44, R * 0.08, 0, 0, R * 1.3);
+    sel.addColorStop(0, 'rgba(126,255,214,0.62)');
+    sel.addColorStop(0.5, 'rgba(94,242,192,0.26)');
+    sel.addColorStop(1, 'rgba(12,44,38,0.95)');
+    _grads.r = R; _grads.base = base; _grads.sel = sel;
+  }
+  return _grads;
+}
+
+/**
+ * Contact shadows for the whole pile in one fill. Drawn as a separate pass so a
+ * tile's shadow can never land on top of the tile in front of it.
+ */
+function drawTileShadows(ctx, tiles) {
+  if (!tiles.length) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  for (const t of tiles) {
+    const R = t.r * 0.98;
+    ctx.moveTo(t.x + R * 0.05 + R, t.y + R * 0.18);
+    ctx.arc(t.x + R * 0.05, t.y + R * 0.18, R, 0, TAU);
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawTile(ctx, t, state, tt) {
   // Drawn a touch smaller than the collision radius: a jammed pile overlaps by a
   // couple of units and this turns that into a clean seam instead of a smear.
@@ -207,29 +289,43 @@ function drawTile(ctx, t, state, tt) {
   const sel = state.selSet.has(t.id);
   const hint = state.hintId === t.id;
   const ink = tileInk(t.letter);
+  const gr = tileGrads(ctx, R);
 
   ctx.save();
   ctx.translate(t.x, t.y);
   ctx.scale(1 + sq * 0.24, 1 - sq * 0.24);
 
+  // body — lit from the upper left so the pile has a light direction
   ctx.beginPath();
   ctx.arc(0, 0, R, 0, TAU);
-  ctx.fillStyle = sel ? 'rgba(94,242,192,0.20)' : '#151b2a';
+  ctx.fillStyle = sel ? gr.sel : gr.base;
   ctx.fill();
 
-  // top-lit rim
+  // specular cap
   ctx.beginPath();
-  ctx.arc(0, 0, R - 2.2, Math.PI * 1.12, Math.PI * 1.88);
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-  ctx.lineWidth = 2.4;
+  ctx.arc(-R * 0.24, -R * 0.32, R * 0.5, 0, TAU);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fill();
+
+  // lit rim above, shaded rim below
+  const lw = Math.max(1, R * 0.11);
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  ctx.arc(0, 0, R - lw * 0.5, Math.PI * 1.06, Math.PI * 1.94);
+  ctx.strokeStyle = 'rgba(255,255,255,0.20)';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, R - lw * 0.5, Math.PI * 0.08, Math.PI * 0.92);
+  ctx.strokeStyle = 'rgba(0,0,0,0.40)';
   ctx.stroke();
 
+  // edge
   ctx.beginPath();
   ctx.arc(0, 0, R, 0, TAU);
-  ctx.lineWidth = sel ? 2.6 : 1.6;
+  ctx.lineWidth = sel ? 3 : 1.4;
   ctx.strokeStyle = sel ? Palette.accent : ink;
-  ctx.globalAlpha = sel ? 1 : 0.75;
-  if (sel) { ctx.shadowColor = Palette.accent; ctx.shadowBlur = 12; }
+  ctx.globalAlpha = sel ? 1 : 0.5;
+  if (sel) { ctx.shadowColor = Palette.accent; ctx.shadowBlur = 18; }
   ctx.stroke();
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 1;
@@ -247,51 +343,125 @@ function drawTile(ctx, t, state, tt) {
 
   text(ctx, t.letter.toUpperCase(), 0, 1, {
     size: R * 1.16, weight: 700, align: 'center', baseline: 'middle',
-    color: sel ? Palette.accent : Palette.ink,
+    color: sel ? '#eafff8' : Palette.ink,
   });
   text(ctx, String(LETTER_VALUE[t.letter] || 1), R * 0.56, R * 0.5, {
     size: R * 0.4, weight: 600, align: 'center', baseline: 'middle',
-    color: sel ? Palette.accent : ink, alpha: 0.8,
+    color: sel ? Palette.accent : ink, alpha: 0.85,
   });
 
   ctx.restore();
 }
 
-function drawJar(ctx, sim, tt) {
-  ctx.fillStyle = Palette.bg2;
+/** The jar interior: glass, grid, and the danger wash under the top line. */
+function drawJar(ctx, sim, tt, heat) {
+  const glass = ctx.createLinearGradient(0, 0, 0, WORLD_H);
+  glass.addColorStop(0, '#0c1120');
+  glass.addColorStop(0.55, '#0a0e19');
+  glass.addColorStop(1, '#070a12');
+  ctx.fillStyle = glass;
   roundRect(ctx, 0, 0, WORLD_W, WORLD_H, 10);
   ctx.fill();
 
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, 0, 0, WORLD_W, WORLD_H, 10);
+  ctx.clip();
+
   ctx.strokeStyle = Palette.grid;
   ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.55;
+  ctx.globalAlpha = 0.42;
   ctx.beginPath();
   for (let x = 60; x < WORLD_W; x += 60) { ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_H); }
   for (let y = 60; y < WORLD_H; y += 60) { ctx.moveTo(0, y); ctx.lineTo(WORLD_W, y); }
   ctx.stroke();
   ctx.globalAlpha = 1;
 
-  // the top line
-  const danger = clamp(sim.overflowT / 0.9, 0, 1);
-  const pulse = 0.5 + 0.5 * Math.sin(tt * (danger > 0 ? 12 : 2.2));
-  ctx.setLineDash([9, 8]);
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = danger > 0 ? Palette.hot : Palette.grid;
-  ctx.globalAlpha = danger > 0 ? 0.45 + pulse * 0.55 : 0.5 + pulse * 0.2;
-  ctx.beginPath();
-  ctx.moveTo(0, DANGER_Y);
-  ctx.lineTo(WORLD_W, DANGER_Y);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 1;
-  text(ctx, 'TOP LINE', WORLD_W - 8, DANGER_Y - 12, {
-    size: 9, color: danger > 0 ? Palette.hot : Palette.dim, align: 'right', alpha: 0.55 + danger * 0.45,
-  });
+  // the danger wash — the band above the top line reddens as the pile climbs
+  if (heat > 0.02) {
+    const wash = ctx.createLinearGradient(0, 0, 0, DANGER_Y + 40);
+    wash.addColorStop(0, 'rgba(255,77,109,' + (0.20 * heat).toFixed(3) + ')');
+    wash.addColorStop(1, 'rgba(255,77,109,0)');
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, 0, WORLD_W, DANGER_Y + 40);
+  }
+
+  // a soft floor bounce light so the bottom of the jar is not a flat void
+  const floor = ctx.createLinearGradient(0, WORLD_H - 120, 0, WORLD_H);
+  floor.addColorStop(0, 'rgba(59,167,255,0)');
+  floor.addColorStop(1, 'rgba(59,167,255,0.07)');
+  ctx.fillStyle = floor;
+  ctx.fillRect(0, WORLD_H - 120, WORLD_W, 120);
+  ctx.restore();
 
   ctx.strokeStyle = Palette.grid;
   ctx.lineWidth = 1.5;
   roundRect(ctx, 0.75, 0.75, WORLD_W - 1.5, WORLD_H - 1.5, 10);
   ctx.stroke();
+}
+
+/**
+ * The lose threshold, drawn in screen space over the pile so it always reads as a
+ * threshold rather than as scenery the tiles bury. It brightens, thickens, speeds
+ * up and finally strobes as the pile approaches.
+ */
+function drawDangerLine(ctx, s, v, tt, dg, heat) {
+  const y = Math.round(v.oy + DANGER_Y * v.scale) + 0.5;
+  const pulse = 0.5 + 0.5 * Math.sin(tt * (dg > 0 ? 11 : 2.4));
+  const col = dg > 0 ? Palette.hot : (heat > 0.5 ? Palette.warm : Palette.accent2);
+
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, v.ox, v.oy, v.jarW, v.jarH, 10 * v.scale);
+  ctx.clip();
+
+  ctx.setLineDash([11, 9]);
+  ctx.lineDashOffset = -tt * (18 + dg * 90);
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 1.5 + heat * 1.6;
+  ctx.strokeStyle = col;
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 3 + heat * 14 + dg * pulse * 16;
+  ctx.globalAlpha = 0.3 + heat * 0.45 + dg * pulse * 0.25;
+  ctx.beginPath();
+  ctx.moveTo(v.ox, y);
+  ctx.lineTo(v.ox + v.jarW, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  // end caps — small solid ticks so the line is anchored to the glass
+  ctx.fillStyle = col;
+  ctx.globalAlpha = 0.5 + heat * 0.5;
+  ctx.fillRect(v.ox, y - 1.5, 10, 3);
+  ctx.fillRect(v.ox + v.jarW - 10, y - 1.5, 10, 3);
+  ctx.globalAlpha = 1;
+
+  // label chip, inside the glass, legible over whatever is behind it
+  if (!v.compact || v.jarW > 240) {
+    const fs = v.compact ? 9 : Type.micro;
+    const label = dg > 0 ? 'OVERFLOWING' : 'TOP LINE';
+    ctx.font = `700 ${fs}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    const tw = ctx.measureText(label).width;
+    const cw = tw + 14;
+    const cx = v.ox + v.jarW - cw - 7;
+    const cy = y + 6;
+    ctx.fillStyle = 'rgba(7,8,13,0.82)';
+    roundRect(ctx, cx, cy, cw, fs + 9, 3);
+    ctx.fill();
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.45 + heat * 0.5;
+    ctx.lineWidth = 1;
+    roundRect(ctx, cx + 0.5, cy + 0.5, cw - 1, fs + 8, 3);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = col;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, cx + 7, cy + (fs + 9) / 2 + 0.5);
+  }
+  ctx.restore();
 }
 
 function drawChain(ctx, sim, tt) {
@@ -306,85 +476,341 @@ function drawChain(ctx, sim, tt) {
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+
+  // outer bloom
   ctx.strokeStyle = col;
   ctx.shadowColor = col;
-  ctx.shadowBlur = 16;
-  ctx.globalAlpha = 0.85;
-  ctx.lineWidth = 7;
+  ctx.shadowBlur = 22;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 13;
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
   ctx.stroke();
-  ctx.globalAlpha = 1;
+
+  // solid body
   ctx.shadowBlur = 0;
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.globalAlpha = 0.95;
+  ctx.lineWidth = 7;
+  ctx.stroke();
+
+  // hot core
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 2.6;
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.stroke();
+
+  // nodes
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  for (let i = 0; i < pts.length; i++) {
+    ctx.beginPath();
+    ctx.arc(pts[i].x, pts[i].y, i === pts.length - 1 ? 5 : 3.2, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- chrome
+
+function hline(ctx, x, y, w) {
+  ctx.save();
+  ctx.strokeStyle = Palette.grid;
+  ctx.globalAlpha = 0.8;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, y + 0.5);
+  ctx.lineTo(x + w, y + 0.5);
   ctx.stroke();
   ctx.restore();
 }
+
+function drawHud(s, ctx, g, v, dg) {
+  const sim = s.sim;
+  hudStrip(ctx, g, { h: v.hudH });
+
+  const pad = v.compact ? 14 : 22;
+  const vs = v.compact ? 19 : Type.value;
+  const ls = v.compact ? 10 : Type.label;
+  const y = Math.round((v.hudH - (ls + vs + 2)) / 2 + ls);
+  const gap = v.compact ? 112 : 152;
+
+  stat(ctx, pad, y, 'score', sim.score, { valueSize: vs, labelSize: ls });
+  if (g.w >= 520) {
+    stat(ctx, pad + gap, y, 'words', sim.wordsMade, {
+      color: Palette.accent, valueSize: vs, labelSize: ls,
+    });
+  }
+  stat(ctx, g.w - pad, y, 'best', Math.max(s.best, sim.score), {
+    color: Palette.dim, align: 'right', valueSize: vs, labelSize: ls,
+  });
+  if (g.w >= 720) {
+    const live = sim.chainT > 0;
+    stat(ctx, g.w - pad - gap, y, 'chain', '×' + chainMult(sim.chain).toFixed(1), {
+      color: live ? Palette.hot : Palette.dim, align: 'right', valueSize: vs, labelSize: ls,
+    });
+  }
+
+  // the overflow countdown lives on the HUD's own edge — impossible to miss,
+  // impossible to confuse with anything in the jar
+  if (dg > 0.001) {
+    ctx.save();
+    meter(ctx, 0, v.hudH - 3, g.w, 3, dg, {
+      color: Palette.hot, track: 'rgba(0,0,0,0)', radius: 0,
+    });
+    ctx.restore();
+  }
+}
+
+function drawStatusPanel(s, ctx, g, v, dg) {
+  if (!v.panelW) return;
+  const sim = s.sim;
+  const x = v.left, y = v.oy, w = v.panelW, h = v.jarH;
+  panel(ctx, x, y, w, h, { title: 'status', fill: 'rgba(12,16,26,0.9)', radius: 6 });
+
+  const px = x + 14;
+  const iw = w - 28;
+  const lab = v.compact ? 10 : Type.label;
+  const sml = v.compact ? 11 : Type.small;
+  const bigV = v.compact ? 20 : 26;
+  const wordV = v.compact ? 15 : 20;
+  let yy = y + (v.compact ? 42 : 50);
+
+  stat(ctx, px, yy, 'best', Math.max(s.best, sim.score), { valueSize: bigV, labelSize: lab });
+  yy += bigV + (v.compact ? 22 : 28);
+
+  const lw = (s.bestWord && s.bestWord.length >= sim.longest.length) ? s.bestWord : sim.longest;
+  stat(ctx, px, yy, 'longest word', lw ? lw.toUpperCase() : '—', {
+    color: Palette.accent2, valueSize: wordV, labelSize: lab,
+  });
+  yy += wordV + (v.compact ? 18 : 24);
+
+  hline(ctx, px, yy, iw);
+  yy += v.compact ? 14 : 18;
+
+  // pile height — the thing you actually have to manage
+  const heat = clamp(Math.max(s.prox, dg), 0, 1);
+  text(ctx, 'PILE HEIGHT', px, yy, { size: lab, weight: 600, color: Palette.dim });
+  text(ctx, Math.round(heat * 100) + '%', px + iw, yy, {
+    size: lab, weight: 600, color: heat > 0.7 ? Palette.hot : Palette.dim, align: 'right',
+  });
+  meter(ctx, px, yy + lab + 4, iw, 6, heat, {
+    color: heat > 0.72 ? Palette.hot : heat > 0.45 ? Palette.warm : Palette.accent,
+  });
+  yy += lab + 18;
+
+  text(ctx, 'TILES', px, yy, { size: lab, weight: 600, color: Palette.dim });
+  text(ctx, sim.tiles.length + ' / ' + MAX_TILES, px + iw, yy, {
+    size: lab, weight: 600, color: Palette.dim, align: 'right',
+  });
+  meter(ctx, px, yy + lab + 4, iw, 6, sim.tiles.length / MAX_TILES, { color: Palette.accent2 });
+  yy += lab + (v.compact ? 20 : 24);
+
+  // legend — the tile inks mean something, so say so
+  const rowH = v.compact ? 17 : 20;
+  const legendH = 14 + rowH * 3;
+  const footH = v.compact ? 52 : 62;
+  if (y + h - footH - legendH - 8 > yy) {
+    hline(ctx, px, yy, iw);
+    yy += v.compact ? 12 : 16;
+    const rows = [
+      [Palette.accent2, 'VOWELS'],
+      [Palette.violet, 'J  Q  X  Z'],
+      [Palette.dim, 'CONSONANTS'],
+    ];
+    for (const [c, name] of rows) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(px + 5, yy + 5, 5, 0, TAU);
+      ctx.fillStyle = '#151b2a';
+      ctx.fill();
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.restore();
+      text(ctx, name, px + 18, yy, { size: sml, color: Palette.dim, alpha: 0.9 });
+      yy += rowH;
+    }
+  }
+
+  // controls, anchored to the bottom so the panel always has a base
+  if (h > 220) {
+    const fy = y + h - footH;
+    hline(ctx, px, fy - (v.compact ? 8 : 12), iw);
+    text(ctx, 'DRAG THROUGH TOUCHING TILES', px, fy, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
+    text(ctx, 'RELEASE TO SUBMIT', px, fy + rowH, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
+    text(ctx, 'R   RESTART', px, fy + rowH * 2, { size: lab, weight: 600, color: Palette.dim, alpha: 0.75 });
+  }
+}
+
+function drawWordsPanel(s, ctx, g, v, tt) {
+  if (!v.panelW) return;
+  const sim = s.sim;
+  const x = v.ox + v.jarW + v.gutter;
+  const y = v.oy, w = v.panelW, h = v.jarH;
+  const live = sim.chainT > 0;
+  panel(ctx, x, y, w, h, {
+    title: 'words found', fill: 'rgba(12,16,26,0.9)', radius: 6,
+    border: live ? Palette.hot : Palette.grid,
+  });
+
+  const px = x + 14;
+  const iw = w - 28;
+  const lab = v.compact ? 10 : Type.label;
+  const sml = v.compact ? 12 : Type.small;
+
+  // chain block, anchored to the bottom of the panel
+  const chainH = v.compact ? 56 : 70;
+  const cy = y + h - chainH;
+  hline(ctx, px, cy, iw);
+  const m = chainMult(sim.chain);
+  text(ctx, 'CHAIN', px, cy + (v.compact ? 10 : 14), { size: lab, weight: 600, color: Palette.dim });
+  text(ctx, '×' + m.toFixed(1), px + iw, cy + (v.compact ? 6 : 8), {
+    size: v.compact ? 20 : 26, weight: 700, align: 'right',
+    color: live ? Palette.hot : Palette.dim, alpha: live ? 1 : 0.55,
+  });
+  meter(ctx, px, cy + chainH - (v.compact ? 18 : 22), iw, 5,
+    live ? clamp(sim.chainT / CHAIN_WINDOW, 0, 1) : 0, { color: Palette.hot });
+  text(ctx, live ? 'SPELL AGAIN' : 'CLEAR A WORD TO OPEN A CHAIN',
+    px, cy + chainH - (v.compact ? 11 : 13), {
+      size: v.compact ? 9 : Type.micro, weight: 600, alpha: 0.7,
+      color: live ? Palette.warm : Palette.dim,
+    });
+
+  // the log itself, newest first, fading with age
+  const top = y + (v.compact ? 36 : 42);
+  const bottom = cy - 10;
+  const rowH = v.compact ? 21 : 25;
+  const maxRows = Math.max(0, Math.floor((bottom - top) / rowH));
+  if (!s.found.length) {
+    text(ctx, '—', px, top + 2, { size: sml, color: Palette.dim, alpha: 0.4 });
+  }
+  for (let i = 0; i < Math.min(maxRows, s.found.length); i++) {
+    const f = s.found[i];
+    const a = 1 - (i / Math.max(1, maxRows)) * 0.7;
+    const ry = top + i * rowH;
+    text(ctx, f.word.toUpperCase(), px, ry, {
+      size: sml, weight: i === 0 ? 700 : 500, alpha: a,
+      color: i === 0 ? Palette.ink : Palette.dim,
+    });
+    text(ctx, '+' + f.gain, px + iw, ry, {
+      size: sml, weight: 700, align: 'right', alpha: a,
+      color: f.chain > 0 ? Palette.warm : Palette.accent,
+    });
+  }
+}
+
+/**
+ * The reserved word bar. Everything that used to be printed over the pile —
+ * the word you are forming, the chain timer, the idle hint — lands here instead,
+ * so nothing is ever drawn through a falling tile.
+ */
+function drawWordBar(s, ctx, g, v, tt) {
+  if (!v.barH) return;
+  const sim = s.sim;
+  const x = v.left, y = v.barY, w = v.clusterW, h = v.barH;
+  const forming = sim.word.length > 0;
+  const live = sim.chainT > 0;
+  const accentCol = forming
+    ? (sim.valid ? Palette.accent : (sim.word.length >= MIN_WORD ? Palette.hot : Palette.grid))
+    : (live ? Palette.hot : Palette.grid);
+
+  panel(ctx, x, y, w, h, {
+    fill: 'rgba(12,16,26,0.92)', radius: 6, border: accentCol,
+    glowColor: (forming && sim.valid) || live ? accentCol : null, glowBlur: 18,
+  });
+
+  const cx = x + w / 2;
+  const mid = y + h / 2;
+  const bigS = v.compact ? 19 : 26;
+  const sml = v.compact ? 11 : Type.small;
+
+  if (forming) {
+    text(ctx, sim.word.toUpperCase().split('').join(' '), cx, mid, {
+      size: bigS, weight: 700, align: 'center', baseline: 'middle',
+      color: sim.valid ? Palette.accent : Palette.ink, alpha: sim.valid ? 1 : 0.72,
+    });
+    if (sim.valid) {
+      text(ctx, '+' + sim.preview, x + w - 14, mid, {
+        size: v.compact ? 15 : 20, weight: 700, align: 'right', baseline: 'middle',
+        color: Palette.warm,
+      });
+      text(ctx, 'RELEASE', x + 14, mid, {
+        size: sml, weight: 600, baseline: 'middle', color: Palette.dim, alpha: 0.8,
+      });
+    } else if (sim.word.length >= MIN_WORD) {
+      text(ctx, 'NOT A WORD', x + w - 14, mid, {
+        size: sml, weight: 700, align: 'right', baseline: 'middle', color: Palette.hot, alpha: 0.85,
+      });
+    } else {
+      text(ctx, MIN_WORD + ' LETTERS MINIMUM', x + w - 14, mid, {
+        size: sml, weight: 600, align: 'right', baseline: 'middle', color: Palette.dim, alpha: 0.8,
+      });
+    }
+  } else if (live) {
+    const a = clamp(sim.chainT / CHAIN_WINDOW, 0, 1);
+    text(ctx, 'CHAIN ×' + chainMult(sim.chain).toFixed(1) + '  —  SPELL AGAIN', cx, mid, {
+      size: v.compact ? 14 : 18, weight: 700, align: 'center', baseline: 'middle', color: Palette.hot,
+    });
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    meter(ctx, x + 8, y + h - 6, (w - 16) * a, 3, 1, { color: Palette.hot, track: 'rgba(0,0,0,0)', radius: 0 });
+    ctx.restore();
+  } else if (sim.hintIds.length && !sim.over) {
+    text(ctx, 'THERE IS A WORD IN THERE', cx, mid, {
+      size: v.compact ? 12 : 15, weight: 700, align: 'center', baseline: 'middle',
+      color: Palette.warm, alpha: 0.5 + 0.4 * Math.sin(tt * 4.2),
+    });
+  } else {
+    text(ctx, 'DRAG THROUGH TOUCHING LETTERS', cx, mid, {
+      size: v.compact ? 12 : 15, weight: 600, align: 'center', baseline: 'middle',
+      color: Palette.dim, alpha: 0.65,
+    });
+  }
+}
+
+// ---------------------------------------------------------------- frame
 
 function render(s, ctx, g) {
   const v = s.view;
   const sim = s.sim;
   const tt = s.t;
+  const dg = clamp(sim.overflowT / 0.9, 0, 1);
+  const heat = clamp(Math.max(s.prox * 0.92, dg), 0, 1);
 
   // backdrop
   const grad = ctx.createLinearGradient(0, 0, 0, g.h);
   grad.addColorStop(0, Palette.bg);
-  grad.addColorStop(1, '#05060a');
+  grad.addColorStop(1, '#04050a');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, g.w, g.h);
 
   s.selSet = new Set(sim.sel);
   s.hintId = sim.hintIds.length ? sim.hintIds[0] : -1;
 
+  // the jar reads as a lit object sitting in the layout, not a hole cut in black
+  ctx.save();
+  ctx.shadowColor = dg > 0 ? Palette.hot : 'rgba(59,167,255,0.45)';
+  ctx.shadowBlur = 24 + dg * 30;
+  ctx.fillStyle = '#0a0e18';
+  roundRect(ctx, v.ox, v.oy, v.jarW, v.jarH, 10 * v.scale);
+  ctx.fill();
+  ctx.restore();
+
   ctx.save();
   ctx.translate(v.ox, v.oy);
   ctx.scale(v.scale, v.scale);
 
-  drawJar(ctx, sim, tt);
+  drawJar(ctx, sim, tt, heat);
 
   ctx.save();
   ctx.beginPath();
   roundRect(ctx, 0, 0, WORLD_W, WORLD_H, 10);
   ctx.clip();
+  drawTileShadows(ctx, sim.tiles);
   for (const t of sim.tiles) drawTile(ctx, t, s, tt);
   drawChain(ctx, sim, tt);
   ctx.restore();
-
-  // forming word, above the top line
-  if (sim.word.length) {
-    const col = sim.valid ? Palette.accent : Palette.ink;
-    text(ctx, sim.word.toUpperCase().split('').join(' '), WORLD_W / 2, 44, {
-      size: 30, weight: 700, align: 'center', baseline: 'middle', color: col,
-      alpha: sim.valid ? 1 : 0.62,
-    });
-    if (sim.valid) {
-      text(ctx, '+' + sim.preview, WORLD_W / 2, 74, {
-        size: 15, weight: 700, align: 'center', baseline: 'middle', color: Palette.warm,
-      });
-    } else if (sim.word.length >= MIN_WORD) {
-      text(ctx, 'NOT A WORD', WORLD_W / 2, 74, {
-        size: 11, align: 'center', baseline: 'middle', color: Palette.dim, alpha: 0.7,
-      });
-    }
-  } else if (sim.chainT > 0) {
-    const m = chainMult(sim.chain);
-    const a = clamp(sim.chainT / CHAIN_WINDOW, 0, 1);
-    text(ctx, 'CHAIN ×' + m.toFixed(1), WORLD_W / 2, 46, {
-      size: 24, weight: 700, align: 'center', baseline: 'middle', color: Palette.hot,
-      alpha: 0.35 + a * 0.65,
-    });
-    ctx.fillStyle = Palette.hot;
-    ctx.globalAlpha = 0.5;
-    ctx.fillRect(WORLD_W / 2 - 60 * a, 66, 120 * a, 3);
-    ctx.globalAlpha = 1;
-  } else if (sim.hintIds.length && !sim.over) {
-    text(ctx, 'THERE IS A WORD IN THERE', WORLD_W / 2, 50, {
-      size: 11, align: 'center', baseline: 'middle', color: Palette.warm,
-      alpha: 0.25 + 0.25 * Math.sin(tt * 4.2),
-    });
-  }
 
   for (const p of s.pops) {
     const a = clamp(p.life / p.max, 0, 1);
@@ -396,75 +822,73 @@ function render(s, ctx, g) {
 
   ctx.restore();
 
+  drawDangerLine(ctx, s, v, tt, dg, heat);
+
   FX.draw(ctx);
 
-  // ---- HUD (screen space)
-  const hy = Math.max(4, v.padTop * 0.28);
-  const hs = clamp(g.w / 60, 10, 14);
-  text(ctx, 'SCORE ' + sim.score, 14, hy, { size: hs, weight: 700, color: Palette.ink });
-  text(ctx, 'BEST ' + Math.max(s.best, sim.score), g.w - 14, hy, { size: hs, color: Palette.dim, align: 'right' });
-  if (g.h > 300) {
-    text(ctx, 'WORDS ' + sim.wordsMade + (sim.longest ? '  ·  ' + sim.longest.toUpperCase() : ''),
-      14, hy + hs + 4, { size: hs * 0.8, color: Palette.dim });
-    text(ctx, 'TILES ' + sim.tiles.length + '/' + MAX_TILES, g.w - 14, hy + hs + 4,
-      { size: hs * 0.8, color: Palette.dim, align: 'right', alpha: 0.8 });
-  }
+  // ---- chrome
+  drawHud(s, ctx, g, v, dg);
+  drawStatusPanel(s, ctx, g, v, dg);
+  drawWordsPanel(s, ctx, g, v, tt);
+  drawWordBar(s, ctx, g, v, tt);
 
   // ---- flashes
   if (s.goodFlash > 0) {
+    ctx.save();
     ctx.globalAlpha = s.goodFlash * 0.1;
     ctx.fillStyle = Palette.accent;
     ctx.fillRect(0, 0, g.w, g.h);
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
   if (s.flash > 0) {
+    ctx.save();
     ctx.globalAlpha = s.flash * 0.14;
     ctx.fillStyle = Palette.hot;
     ctx.fillRect(0, 0, g.w, g.h);
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
+
+  vignette(ctx, g, 0.45);
 
   // ---- overlays
   if (s.phase === 'intro') {
-    ctx.fillStyle = 'rgba(7,8,13,0.88)';
-    ctx.fillRect(0, 0, g.w, g.h);
-    const cx = g.w / 2, cy = g.h / 2;
-    const k = clamp(g.w / 620, 0.62, 1.15);
-    text(ctx, 'LEXICON', cx, cy - 78 * k, { size: 40 * k, weight: 700, align: 'center', color: Palette.accent });
-    text(ctx, 'Letters rain. Words vaporize. The pile collapses.', cx, cy - 36 * k,
-      { size: 14 * k, align: 'center', color: Palette.ink });
-    text(ctx, 'DRAG THROUGH TOUCHING LETTERS', cx, cy + 2 * k,
-      { size: 17 * k, weight: 700, align: 'center', color: Palette.warm });
-    text(ctx, '3 letters minimum · release to submit · backtrack to undo', cx, cy + 28 * k,
-      { size: 12 * k, align: 'center', color: Palette.dim });
-    text(ctx, 'Spell again before the rubble settles for a CHAIN multiplier.', cx, cy + 48 * k,
-      { size: 12 * k, align: 'center', color: Palette.dim });
-    text(ctx, 'Let the pile rest above the top line and it is over.', cx, cy + 68 * k,
-      { size: 12 * k, align: 'center', color: Palette.dim });
-    const p = 0.5 + 0.5 * Math.sin(tt * 3);
-    text(ctx, 'CLICK TO START', cx, cy + 104 * k, {
-      size: 14 * k, weight: 700, align: 'center', color: Palette.accent2, alpha: 0.35 + p * 0.65,
+    titleCard(ctx, g, {
+      title: 'LEXICON',
+      tagline: 'Letters rain. Words vaporize. The pile collapses.',
+      lines: [
+        'Drag through TOUCHING letters to spell a word.',
+        '3 letters minimum · release to submit · backtrack to undo',
+        'Spell again before the rubble settles for a CHAIN multiplier.',
+        'Let the pile rest above the top line and it is over.',
+      ],
+      prompt: 'CLICK TO START',
+      t: tt,
+      accent: Palette.accent,
     });
   }
 
   if (s.phase === 'over') {
-    ctx.fillStyle = 'rgba(7,8,13,' + clamp(s.overT * 1.6, 0, 0.9) + ')';
+    ctx.save();
+    ctx.fillStyle = 'rgba(7,8,13,' + clamp(s.overT * 1.6, 0, 0.9).toFixed(3) + ')';
     ctx.fillRect(0, 0, g.w, g.h);
-    if (s.overT > 0.15) {
-      const cx = g.w / 2, cy = g.h / 2;
-      const k = clamp(g.w / 620, 0.62, 1.15);
-      text(ctx, 'OVERFLOW', cx, cy - 62 * k, { size: 34 * k, weight: 700, align: 'center', color: Palette.hot });
-      text(ctx, sim.score + ' POINTS', cx, cy - 22 * k, { size: 20 * k, weight: 700, align: 'center', color: Palette.ink });
-      text(ctx, sim.wordsMade + ' words · longest ' + (sim.longest ? sim.longest.toUpperCase() : '—')
-        + ' · best chain ×' + chainMult(sim.bestChain).toFixed(1),
-        cx, cy + 6 * k, { size: 12 * k, align: 'center', color: Palette.dim });
-      text(ctx, 'PERSONAL BEST ' + Math.max(s.best, sim.score)
-        + (s.bestWord ? '  ·  ' + s.bestWord.toUpperCase() : ''),
-        cx, cy + 30 * k, { size: 12 * k, align: 'center', color: Palette.accent, alpha: 0.85 });
-      const p = 0.5 + 0.5 * Math.sin(tt * 3);
-      text(ctx, 'CLICK OR PRESS R', cx, cy + 68 * k, {
-        size: 13 * k, weight: 700, align: 'center', color: Palette.accent2, alpha: 0.35 + p * 0.65,
+    ctx.restore();
+    if (s.overT > 0.18) {
+      ctx.save();
+      ctx.globalAlpha = clamp((s.overT - 0.18) * 3.2, 0, 1);
+      titleCard(ctx, g, {
+        title: 'OVERFLOW',
+        tagline: sim.score + ' POINTS',
+        lines: [
+          sim.wordsMade + ' words · longest ' + (sim.longest ? sim.longest.toUpperCase() : '—')
+            + ' · best chain ×' + chainMult(sim.bestChain).toFixed(1),
+          'personal best ' + Math.max(s.best, sim.score)
+            + (s.bestWord ? '  ·  ' + s.bestWord.toUpperCase() : ''),
+        ],
+        prompt: 'CLICK OR PRESS R',
+        t: tt,
+        accent: Palette.hot,
       });
+      ctx.restore();
     }
   }
 }

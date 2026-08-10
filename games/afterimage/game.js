@@ -9,7 +9,8 @@
 
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
-  clamp, text, roundRect, allFinite,
+  clamp, text, roundRect, allFinite, TAU,
+  Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 import {
@@ -55,7 +56,7 @@ function pushTrail(sim) {
     if (!g.trail) g.trail = [];
     if (g.visible) {
       g.trail.push({ x: g.x, y: g.y });
-      if (g.trail.length > 7) g.trail.shift();
+      if (g.trail.length > 10) g.trail.shift();
     }
   }
 }
@@ -142,217 +143,579 @@ function update(s, dt, g) {
   }
 }
 
-// ---------------------------------------------------------------- render
+// ---------------------------------------------------------------- render — helpers
 
-function levelRect(g, level) {
-  const pad = 12;
-  const availW = g.w - pad * 2;
-  const availH = g.h - 60;
-  const scale = Math.min(availW / (level.cols * TILE), availH / (level.rows * TILE));
-  const w = level.cols * TILE * scale, h = level.rows * TILE * scale;
-  return { x: (g.w - w) / 2, y: 40 + (availH - h) / 2, scale };
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+// Structural tones. These are the game's existing surface colours; everything else
+// is an alpha variant of the shared Palette so the arcade keeps one hue set.
+const C_WALL = '#1c2436';
+const C_WALL_TOP = '#28324a';
+const C_LEDGE = '#3a4666';
+const C_PLATE = '#4a5578';
+
+/** Alpha variant of a Palette hex. Bit ops coerce a bad parse to 0, so never "NaN". */
+function rgba(hex, a) {
+  const h = String(hex).replace('#', '');
+  const full = h.length === 3 ? h[0] + h[0] + h[1] + h[1] + h[2] + h[2] : h;
+  const n = parseInt(full, 16);
+  const A = Number.isFinite(a) ? clamp(a, 0, 1) : 1;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${A})`;
 }
 
-function drawChar(ctx, x, y, alpha, color, glow, faceEye) {
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = color;
-  if (glow) { ctx.shadowColor = color; ctx.shadowBlur = glow; }
-  roundRect(ctx, x, y, PW, PH, 2.5);
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  if (faceEye) {
-    ctx.fillStyle = Palette.bg;
-    ctx.globalAlpha = alpha * 0.9;
-    ctx.fillRect(x + PW / 2 - 1, y + 3, 2, 2);
-  }
-  ctx.globalAlpha = 1;
-}
+const DIM_70 = rgba(Palette.dim, 0.7);
+const ACCENT_12 = rgba(Palette.accent, 0.12);
+const ACCENT_35 = rgba(Palette.accent, 0.35);
+const ACCENT_95 = rgba(Palette.accent, 0.95);
+const WARM_55 = rgba(Palette.warm, 0.55);
+const WARM_22 = rgba(Palette.warm, 0.22);
+const HOT_50 = rgba(Palette.hot, 0.5);
+const WARM_28 = rgba(Palette.warm, 0.28);
+const GRID_LINE = rgba(Palette.dim, 0.13);
+const BG_85 = rgba(Palette.bg, 0.85);
+const SHADE_18 = 'rgba(0,0,0,0.18)';
+const SHADE_35 = 'rgba(0,0,0,0.35)';
+const SHADE_45 = 'rgba(0,0,0,0.45)';
+const LIT_12 = 'rgba(255,255,255,0.12)';
+const LIT_16 = 'rgba(255,255,255,0.16)';
+const LIT_55 = 'rgba(255,255,255,0.55)';
 
-function render(s, ctx, g) {
-  const level = s.sim.level;
-  const rect = levelRect(g, level);
-
-  ctx.fillStyle = Palette.bg;
-  ctx.fillRect(0, 0, g.w, g.h);
-
+function measureWith(ctx, str, font) {
   ctx.save();
-  ctx.translate(rect.x, rect.y);
-  ctx.scale(rect.scale, rect.scale);
+  ctx.font = font;
+  const w = ctx.measureText(String(str)).width;
+  ctx.restore();
+  return Number.isFinite(w) ? w : 0;
+}
 
-  const W = level.cols * TILE, H = level.rows * TILE;
-  ctx.fillStyle = Palette.bg2;
-  ctx.fillRect(0, 0, W, H);
+/** Greedy word wrap capped at maxLines, with a hard-truncated final line. */
+function wrapLines(ctx, str, maxW, size, maxLines) {
+  const font = `500 ${size}px ${MONO}`;
+  const words = String(str).split(/\s+/).filter(Boolean);
+  const all = [];
+  let cur = '';
+  for (const w of words) {
+    const trial = cur ? cur + ' ' + w : w;
+    if (cur && measureWith(ctx, trial, font) > maxW) { all.push(cur); cur = w; } else cur = trial;
+  }
+  if (cur) all.push(cur);
+  if (all.length <= maxLines) return all;
+  const out = all.slice(0, maxLines);
+  let last = out[maxLines - 1];
+  while (last.length > 1 && measureWith(ctx, last + '...', font) > maxW) last = last.slice(0, -1);
+  out[maxLines - 1] = last + '...';
+  return out;
+}
 
-  // door state (recompute for render, mirrors sim's plate logic loosely — visual only)
-  const doorOpen = {};
-  for (let id = 1; id <= 4; id++) {
-    doorOpen[id] = false;
-    for (const gh of s.sim.ghosts) {
-      if (!gh.visible) continue;
-      for (let r = 0; r < level.rows; r++) for (let c = 0; c < level.cols; c++) {
-        const ch = level.grid[r][c];
-        if (ch >= '1' && ch <= '4' && ch.charCodeAt(0) - 48 === id) {
-          if (gh.x < c * TILE + TILE + 3 && gh.x + PW > c * TILE - 3 && gh.y < r * TILE + TILE + 3 && gh.y + PH > r * TILE - 3) doorOpen[id] = true;
+/**
+ * One layout for the whole screen: the HUD strip owns the top, the hint bar owns a
+ * reserved slab at the bottom, and the framed playfield gets exactly what is left.
+ * Because the scale subtracts the frame padding first, the frame can never creep
+ * under the HUD or over the hint bar at any viewport size.
+ */
+const FRAME_PAD = 10;
+
+function layout(g, level, compact) {
+  const barH = compact ? 42 : 34;
+  const gap = compact ? 8 : 12;
+  const side = compact ? 8 : 14;
+  const top = HUD_H + gap;
+  const barY = Math.max(top + 20, g.h - barH - gap);
+  const bottom = barY - gap;
+  const availW = Math.max(60, g.w - side * 2);
+  const availH = Math.max(48, bottom - top);
+  const scale = Math.max(0.05, Math.min(
+    (availW - FRAME_PAD * 2) / (level.cols * TILE),
+    (availH - FRAME_PAD * 2) / (level.rows * TILE),
+  ));
+  const w = level.cols * TILE * scale, h = level.rows * TILE * scale;
+  const x = (g.w - w) / 2;
+  const y = top + (availH - h) / 2;
+  return {
+    x, y, scale, w, h,
+    frame: { x: x - FRAME_PAD, y: y - FRAME_PAD, w: w + FRAME_PAD * 2, h: h + FRAME_PAD * 2 },
+    barX: side, barW: Math.max(80, g.w - side * 2), barY, barH,
+  };
+}
+
+/**
+ * Render-side mirror of the sim's plate test (same 3px touch pad as
+ * overlapsRectTouch) so the drawn mechanism state matches what physics does.
+ */
+function computeDoorState(sim) {
+  const level = sim.level;
+  const open = { 1: false, 2: false, 3: false, 4: false };
+  const bodies = [];
+  for (const gh of sim.ghosts) if (gh.visible) bodies.push(gh);
+  bodies.push(sim.player);
+  for (let r = 0; r < level.rows; r++) {
+    const row = level.grid[r];
+    for (let c = 0; c < level.cols; c++) {
+      const ch = row[c];
+      if (ch < '1' || ch > '4') continue;
+      const id = ch.charCodeAt(0) - 48;
+      if (open[id]) continue;
+      const rx = c * TILE, ry = r * TILE;
+      for (const b of bodies) {
+        if (b.x < rx + TILE + 3 && b.x + PW > rx - 3 && b.y < ry + TILE + 3 && b.y + PH > ry - 3) {
+          open[id] = true; break;
         }
       }
     }
-    const p = s.sim.player;
-    for (let r = 0; r < level.rows; r++) for (let c = 0; c < level.cols; c++) {
-      const ch = level.grid[r][c];
-      if (ch >= '1' && ch <= '4' && ch.charCodeAt(0) - 48 === id) {
-        if (p.x < c * TILE + TILE + 3 && p.x + PW > c * TILE - 3 && p.y < r * TILE + TILE + 3 && p.y + PH > r * TILE - 3) doorOpen[id] = true;
-      }
-    }
   }
+  return open;
+}
+
+/** A body with depth: soft halo, vertical gradient, rim light, single pixel eye. */
+function drawBody(ctx, x, y, { color, alpha = 1, halo = 0, glow = 0, eye = false, face = 1 }) {
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha, 0, 1);
+  const cx = x + PW / 2, cy = y + PH / 2;
+  if (halo > 0) {
+    const grd = ctx.createRadialGradient(cx, cy, 0.5, cx, cy, halo);
+    grd.addColorStop(0, rgba(color, 0.40));
+    grd.addColorStop(0.45, rgba(color, 0.13));
+    grd.addColorStop(1, rgba(color, 0));
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, halo, 0, TAU);
+    ctx.fill();
+  }
+  if (glow > 0) { ctx.shadowColor = color; ctx.shadowBlur = glow; }
+  const body = ctx.createLinearGradient(x, y, x, y + PH);
+  body.addColorStop(0, rgba(color, 1));
+  body.addColorStop(1, rgba(color, 0.68));
+  ctx.fillStyle = body;
+  roundRect(ctx, x, y, PW, PH, 2.5);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+  ctx.lineWidth = 0.6;
+  roundRect(ctx, x + 0.4, y + 0.4, PW - 0.8, PH - 0.8, 2.2);
+  ctx.stroke();
+  if (eye) {
+    ctx.fillStyle = BG_85;
+    ctx.fillRect(x + PW / 2 - 1 + (face > 0 ? 1.2 : -1.2), y + 3.4, 2, 2);
+  }
+  ctx.restore();
+}
+
+/** Motion blur, not a row of stamps: a tapered stroke along the recorded path. */
+function drawSmear(ctx, trail, color, baseAlpha) {
+  if (!trail || trail.length < 2) return;
+  let len = 0;
+  for (let i = 1; i < trail.length; i++) {
+    len += Math.abs(trail[i].x - trail[i - 1].x) + Math.abs(trail[i].y - trail[i - 1].y);
+  }
+  if (len < 1.5) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = color;
+  const last = trail.length - 1;
+  for (let i = 1; i <= last; i++) {
+    const f = i / last;
+    ctx.globalAlpha = clamp(baseAlpha * 0.34 * f * f, 0, 1);
+    ctx.lineWidth = PW * (0.28 + 0.56 * f);
+    ctx.beginPath();
+    ctx.moveTo(trail[i - 1].x + PW / 2, trail[i - 1].y + PH / 2);
+    ctx.lineTo(trail[i].x + PW / 2, trail[i].y + PH / 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- render — chrome
+
+function drawHUD(s, ctx, g, compact) {
+  hudStrip(ctx, g);
+
+  const total = LEVELS.length;
+  const idx = clamp(s.levelIndex, 0, total - 1);
+  const lvValue = `${String(idx + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`;
+  const lvSize = compact ? Type.body : Type.value;
+  stat(ctx, 18, 20, 'LEVEL', lvValue, { valueSize: lvSize, color: Palette.ink });
+  const lvW = measureWith(ctx, lvValue, `700 ${lvSize}px ${MONO}`);
+
+  // Right cluster, laid out right-to-left so the most important figure hugs the edge.
+  const items = [{
+    label: 'GHOSTS',
+    value: `${s.sim.ghosts.length}/${GHOST_CAP}`,
+    color: Palette.violet,
+    size: compact ? Type.body : Type.value,
+  }, {
+    label: 'RUN', value: String(s.sim.runsUsed), color: Palette.ink, size: Type.body,
+  }];
+  if (!compact) {
+    const best = Store.get('best' + idx, null);
+    if (typeof best === 'number' && Number.isFinite(best)) {
+      items.push({ label: 'BEST', value: String(best), color: Palette.accent, size: Type.body });
+    }
+    items.push({
+      label: 'GHOST PAR', value: String(s.sim.level.par), color: Palette.dim,
+      size: Type.body, labelColor: DIM_70,
+    });
+  }
+
+  const gap = compact ? 20 : 28;
+  let x = g.w - 18;
+  for (const it of items) {
+    stat(ctx, x, 20, it.label, it.value, {
+      align: 'right', valueSize: it.size, color: it.color, labelColor: it.labelColor || Palette.dim,
+    });
+    const wLab = measureWith(ctx, it.label, `600 ${Type.label}px ${MONO}`) + it.label.length * Type.label * 0.14;
+    const wVal = measureWith(ctx, it.value, `700 ${it.size}px ${MONO}`);
+    x -= Math.max(wLab, wVal) + gap;
+  }
+  const clusterLeft = x + gap;
+
+  // The level name is secondary: it appears only when it genuinely fits.
+  const name = String(s.sim.level.name || '').toUpperCase();
+  const nameX = 18 + lvW + 14;
+  const nameFont = `600 ${Type.small}px ${MONO}`;
+  if (name && nameX + measureWith(ctx, name, nameFont) < clusterLeft - 14) {
+    text(ctx, name, nameX, 20 + lvSize + 2, {
+      size: Type.small, color: Palette.dim, baseline: 'alphabetic', weight: 600,
+    });
+  }
+
+  // Campaign progress rides the bottom edge of the strip.
+  meter(ctx, 0, HUD_H - 3, g.w, 3, (idx + 1) / total, {
+    color: Palette.accent, track: 'rgba(255,255,255,0.05)', radius: 0, glow: false,
+  });
+}
+
+function drawHintBar(s, ctx, g, lay, compact) {
+  const { barX, barW, barY, barH } = lay;
+  panel(ctx, barX, barY, barW, barH, {
+    fill: 'rgba(13,16,24,0.86)', border: Palette.grid, radius: 4,
+  });
+
+  const fresh = clamp(s.hintT / 0.6, 0, 1);
+  let tx = barX + 14;
+  let avail = barW - 28;
+
+  if (!compact) {
+    // A marker that lights while the hint is new, then settles.
+    ctx.save();
+    ctx.globalAlpha = 0.25 + 0.75 * fresh;
+    ctx.fillStyle = Palette.accent;
+    ctx.fillRect(barX + 1, barY + 6, 2, barH - 12);
+    ctx.restore();
+
+    text(ctx, 'HINT', tx, barY + barH / 2 + 4, {
+      size: Type.label, color: DIM_70, baseline: 'alphabetic', weight: 600,
+    });
+    const labW = measureWith(ctx, 'HINT', `600 ${Type.label}px ${MONO}`) + 4 * Type.label * 0.14;
+    tx += labW + 14;
+
+    const keys = '← →  MOVE     SPACE  JUMP     R  RETRY';
+    const keysW = measureWith(ctx, keys, `500 ${Type.label}px ${MONO}`);
+    text(ctx, keys, barX + barW - 14, barY + barH / 2 + 4, {
+      size: Type.label, color: DIM_70, align: 'right', baseline: 'alphabetic', weight: 500,
+    });
+    avail = Math.max(60, barX + barW - 14 - keysW - 20 - tx);
+  }
+
+  const size = compact ? 11 : Type.small;
+  const lines = wrapLines(ctx, s.sim.level.hint || '', avail, size, compact ? 2 : 1);
+  const step = size + 3;
+  let ty = barY + (barH - lines.length * step) / 2 + size;
+  for (const line of lines) {
+    text(ctx, line, compact ? barX + barW / 2 : tx, ty, {
+      size, color: Palette.ink, align: compact ? 'center' : 'left',
+      baseline: 'alphabetic', alpha: 0.5 + 0.5 * fresh,
+    });
+    ty += step;
+  }
+}
+
+// ---------------------------------------------------------------- render — playfield
+
+function drawTiles(s, ctx, level, doorOpen, hair, t) {
+  const W = level.cols * TILE, H = level.rows * TILE;
+
+  ctx.fillStyle = Palette.bg2;
+  ctx.fillRect(0, 0, W, H);
+  const depth = ctx.createLinearGradient(0, 0, 0, H);
+  depth.addColorStop(0, 'rgba(255,255,255,0.02)');
+  depth.addColorStop(1, 'rgba(0,0,0,0.32)');
+  ctx.fillStyle = depth;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.strokeStyle = GRID_LINE;
+  ctx.lineWidth = hair;
+  ctx.beginPath();
+  for (let c = 1; c < level.cols; c++) { ctx.moveTo(c * TILE, 0); ctx.lineTo(c * TILE, H); }
+  for (let r = 1; r < level.rows; r++) { ctx.moveTo(0, r * TILE); ctx.lineTo(W, r * TILE); }
+  ctx.stroke();
+  ctx.restore();
+
+  const isWall = (rr, cc) => rr >= 0 && rr < level.rows && cc >= 0 && cc < level.cols && level.grid[rr][cc] === '#';
 
   for (let r = 0; r < level.rows; r++) {
     for (let c = 0; c < level.cols; c++) {
       const ch = level.grid[r][c];
       const bx = c * TILE, by = r * TILE;
+
       if (ch === '#') {
-        ctx.fillStyle = '#1c2436';
+        ctx.fillStyle = C_WALL;
         ctx.fillRect(bx, by, TILE, TILE);
-        ctx.fillStyle = '#28324a';
-        if (r === 0 || level.grid[r - 1][c] !== '#') ctx.fillRect(bx, by, TILE, 2);
-      } else if (ch === '^') {
-        ctx.fillStyle = Palette.hot;
-        ctx.beginPath();
-        for (let k = 0; k < 4; k++) {
-          ctx.moveTo(bx + k * 4, by + TILE);
-          ctx.lineTo(bx + k * 4 + 2, by + TILE - 7);
-          ctx.lineTo(bx + k * 4 + 4, by + TILE);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        ctx.fillRect(bx, by, TILE, TILE);
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fillRect(bx, by + TILE * 0.55, TILE, TILE * 0.45);
+        if (!isWall(r - 1, c)) {
+          ctx.fillStyle = C_WALL_TOP;
+          ctx.fillRect(bx, by, TILE, 2.5);
+          ctx.fillStyle = LIT_16;
+          ctx.fillRect(bx, by, TILE, 0.9);
         }
-        ctx.fill();
+        if (!isWall(r + 1, c)) { ctx.fillStyle = SHADE_35; ctx.fillRect(bx, by + TILE - 1.5, TILE, 1.5); }
+        if (!isWall(r, c - 1)) { ctx.fillStyle = SHADE_18; ctx.fillRect(bx, by, 1, TILE); }
+        if (!isWall(r, c + 1)) { ctx.fillStyle = SHADE_18; ctx.fillRect(bx + TILE - 1, by, 1, TILE); }
+
+      } else if (ch === '^') {
+        withGlow(ctx, Palette.hot, 5, () => {
+          ctx.fillStyle = Palette.hot;
+          ctx.beginPath();
+          for (let k = 0; k < 4; k++) {
+            ctx.moveTo(bx + k * 4, by + TILE);
+            ctx.lineTo(bx + k * 4 + 2, by + TILE - 7);
+            ctx.lineTo(bx + k * 4 + 4, by + TILE);
+          }
+          ctx.fill();
+        });
+        ctx.fillStyle = HOT_50;
+        ctx.fillRect(bx, by + TILE - 1, TILE, 1);
+
       } else if (ch === '_') {
-        ctx.fillStyle = '#3a4666';
-        ctx.fillRect(bx, by + TILE - 4, TILE, 4);
+        // A floating one-way ledge is landed on at its tile's TOP edge, but a
+        // floor-mounted one is walked over — so the plate sits on whichever edge the
+        // player actually meets. Drawing both the same way is what made bodies look
+        // like they were hovering a tile above the thing they stand on.
+        const topY = isWall(r + 1, c) ? by + TILE - 4 : by;
+        ctx.fillStyle = C_LEDGE;
+        ctx.fillRect(bx, topY, TILE, 3);
+        ctx.fillStyle = LIT_16;
+        ctx.fillRect(bx, topY, TILE, 0.9);
+        ctx.fillStyle = SHADE_35;
+        ctx.fillRect(bx, topY + 2.2, TILE, 1.4);
+
       } else if (ch >= '1' && ch <= '4') {
+        // Pressure plate: a cap on a housing that visibly sinks and lights under
+        // weight. Same edge rule as the one-way ledge above.
         const id = ch.charCodeAt(0) - 48;
-        const active = doorOpen[id];
-        ctx.fillStyle = active ? Palette.accent : '#4a5578';
-        ctx.fillRect(bx + 1, by + TILE - 5, TILE - 2, 5);
-        ctx.globalAlpha = active ? 0.35 : 0.15;
-        ctx.fillRect(bx + 1, by + TILE - 5, TILE - 2, 5);
-        ctx.globalAlpha = 1;
-        text(ctx, String(id), bx + TILE / 2, by + TILE - 3, { size: 7, color: Palette.bg, align: 'center', baseline: 'bottom', weight: 700 });
+        const active = !!doorOpen[id];
+        const drop = active ? 1.3 : 0;
+        const grounded = isWall(r + 1, c);
+        const capY = (grounded ? by + TILE - 3.4 : by) + drop;
+        const houseY = grounded ? by + TILE - 5.4 : by + 1.4;
+        ctx.fillStyle = SHADE_45;
+        ctx.fillRect(bx + 1, houseY, TILE - 2, 5.2);
+        if (active) { ctx.save(); ctx.shadowColor = Palette.accent; ctx.shadowBlur = 8; }
+        ctx.fillStyle = active ? Palette.accent : C_PLATE;
+        roundRect(ctx, bx + 1, capY, TILE - 2, 3.2, 1.2);
+        ctx.fill();
+        if (active) ctx.restore();
+        ctx.fillStyle = active ? LIT_55 : LIT_12;
+        ctx.fillRect(bx + 2, capY + 0.4, TILE - 4, 0.8);
+        text(ctx, String(id), bx + TILE / 2, grounded ? by + TILE - 6 : by + 13, {
+          size: 5.5, color: active ? ACCENT_95 : DIM_70, align: 'center', baseline: 'bottom', weight: 700,
+        });
+
       } else if (ch >= 'a' && ch <= 'd') {
         const id = ch.charCodeAt(0) - 96;
-        const open = doorOpen[id];
+        const open = !!doorOpen[id];
         if (!open) {
-          ctx.fillStyle = Palette.warm;
-          ctx.globalAlpha = 0.85;
-          ctx.fillRect(bx, by, TILE, TILE);
-          ctx.globalAlpha = 1;
+          // Closed: a solid slab, lit, with machined grooves.
+          ctx.save();
+          ctx.shadowColor = Palette.warm;
+          ctx.shadowBlur = 6;
+          const slab = ctx.createLinearGradient(bx, 0, bx + TILE, 0);
+          slab.addColorStop(0, rgba(Palette.warm, 0.55));
+          slab.addColorStop(0.5, rgba(Palette.warm, 0.92));
+          slab.addColorStop(1, rgba(Palette.warm, 0.55));
+          ctx.fillStyle = slab;
+          ctx.fillRect(bx + 0.5, by, TILE - 1, TILE);
+          ctx.restore();
+          ctx.fillStyle = 'rgba(0,0,0,0.24)';
+          for (let k = 1; k < 4; k++) ctx.fillRect(bx + 0.5, by + k * (TILE / 4) - 0.4, TILE - 1, 0.8);
+          text(ctx, String(id), bx + TILE / 2, by + TILE / 2 + 2.5, {
+            size: 6, color: BG_85, align: 'center', baseline: 'alphabetic', weight: 700,
+          });
         } else {
-          ctx.strokeStyle = Palette.warm;
-          ctx.globalAlpha = 0.35;
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(bx + 1.5, by + 1.5, TILE - 3, TILE - 3);
-          ctx.globalAlpha = 1;
+          // Open: the slab has retracted into its housings, leaving a lit doorway.
+          ctx.fillStyle = WARM_28;
+          ctx.fillRect(bx + 0.5, by, 1, TILE);
+          ctx.fillRect(bx + TILE - 1.5, by, 1, TILE);
+          ctx.fillStyle = WARM_55;
+          ctx.fillRect(bx + 1.5, by, TILE - 3, 2.5);
+          ctx.fillRect(bx + 1.5, by + TILE - 2.5, TILE - 3, 2.5);
+          ctx.save();
+          ctx.strokeStyle = WARM_22;
+          ctx.lineWidth = hair;
+          ctx.setLineDash([1.5, 2.5]);
+          ctx.beginPath();
+          ctx.moveTo(bx + TILE / 2, by + 3);
+          ctx.lineTo(bx + TILE / 2, by + TILE - 3);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+          text(ctx, String(id), bx + TILE / 2, by + TILE / 2 + 2.5, {
+            size: 6, color: WARM_55, align: 'center', baseline: 'alphabetic', weight: 700,
+          });
         }
       }
     }
   }
 
   // goal
-  const gx = level.goal.x * TILE, gy = level.goal.y * TILE;
-  const pulse = 0.55 + 0.45 * Math.sin(s.timerT * 3);
-  ctx.globalAlpha = s.sim.won ? 1 : pulse;
+  const gx = level.goal.x * TILE + TILE / 2, gy = level.goal.y * TILE + TILE / 2;
+  const pulse = 0.55 + 0.45 * Math.sin(t * 3);
+  const won = !!s.sim.won;
+  ctx.save();
+  ctx.globalAlpha = won ? 1 : 0.4 + 0.5 * pulse;
   ctx.strokeStyle = Palette.accent;
-  ctx.lineWidth = 2;
-  roundRect(ctx, gx + 2.5, gy + 2.5, TILE - 5, TILE - 5, 3);
+  ctx.lineWidth = 1.2;
+  ctx.shadowColor = Palette.accent;
+  ctx.shadowBlur = won ? 12 : 6;
+  roundRect(ctx, gx - TILE / 2 + 2.5, gy - TILE / 2 + 2.5, TILE - 5, TILE - 5, 3);
   ctx.stroke();
-  ctx.globalAlpha = 0.16 * (s.sim.won ? 1.6 : pulse);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.14 * (won ? 1.8 : pulse);
   ctx.fillStyle = Palette.accent;
   ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.restore();
+  orb(ctx, gx, gy, 1.6 + pulse * 0.9, Palette.accent, { glow: 0.8, rim: false });
+}
 
-  // ghosts (older = fainter), with a short trailing afterimage
+function drawPlayfield(s, ctx, g, lay, t) {
+  const level = s.sim.level;
+  const f = lay.frame;
+
+  panel(ctx, f.x, f.y, f.w, f.h, {
+    fill: 'rgba(9,12,19,0.96)', border: Palette.grid, radius: 6,
+    glowColor: ACCENT_12, glowBlur: 30,
+  });
+
+  ctx.save();
+  roundRect(ctx, f.x + 1, f.y + 1, f.w - 2, f.h - 2, 5);
+  ctx.clip();
+  ctx.translate(lay.x, lay.y);
+  ctx.scale(lay.scale, lay.scale);
+
+  const hair = 1 / lay.scale;
+  drawTiles(s, ctx, level, computeDoorState(s.sim), hair, t);
+
+  // ghosts — older ones fade back, each dragging a soft smear
   const n = s.sim.ghosts.length;
   for (let i = 0; i < n; i++) {
     const gh = s.sim.ghosts[i];
     if (!gh.visible) continue;
     const age = n - i; // 1 = newest
-    const baseAlpha = clamp(0.55 - (age - 1) * 0.08, 0.14, 0.55);
-    if (gh.trail) {
-      for (let t = 0; t < gh.trail.length; t++) {
-        const tp = gh.trail[t];
-        const ta = baseAlpha * (t / gh.trail.length) * 0.35;
-        drawChar(ctx, tp.x, tp.y, ta, Palette.violet, 0, false);
-      }
-    }
-    drawChar(ctx, gh.x, gh.y, baseAlpha, Palette.violet, 6, false);
+    const a = clamp(0.52 - (age - 1) * 0.075, 0.13, 0.52);
+    drawSmear(ctx, gh.trail, Palette.violet, a);
+    drawBody(ctx, gh.x, gh.y, {
+      color: Palette.violet, alpha: a, halo: 8 + (1 - a) * 2, glow: 5, face: gh.face,
+    });
   }
 
-  // player
+  // the living player, unmistakably brighter than anything it left behind
   if (!s.sim.player.dead) {
-    drawChar(ctx, s.sim.player.x, s.sim.player.y, 1, s.sim.won ? Palette.accent : Palette.warm, s.sim.won ? 14 : 8, true);
+    const p = s.sim.player;
+    drawBody(ctx, p.x, p.y, {
+      color: s.sim.won ? Palette.accent : Palette.warm,
+      alpha: 1, halo: s.sim.won ? 18 : 14, glow: s.sim.won ? 14 : 9, eye: true, face: p.face,
+    });
   }
 
-  ctx.restore();
-
+  // particles live in level space, so bursts land on the character that made them
   FX.draw(ctx);
+  ctx.restore();
+}
 
-  // HUD
-  const level_ = LEVELS[s.levelIndex];
-  text(ctx, `${String(s.levelIndex + 1).padStart(2, '0')}/${String(LEVELS.length).padStart(2, '0')}  ${level_.name.toUpperCase()}`,
-    12, 12, { size: 12, color: Palette.ink, weight: 700 });
-  const best = Store.get('best' + s.levelIndex, null);
-  text(ctx, `GHOST PAR ${level_.par}${best ? '  ·  BEST ' + best : ''}`, 12, 28, { size: 10, color: Palette.dim });
-  text(ctx, `GHOSTS ${s.sim.ghosts.length}/${GHOST_CAP}`, g.w - 12, 12, { size: 11, color: Palette.dim, align: 'right' });
-  text(ctx, `RUN ${s.sim.runsUsed}`, g.w - 12, 27, { size: 11, color: Palette.dim, align: 'right' });
+// ---------------------------------------------------------------- render
 
-  if (s.hintT > 0 && s.phase === 'play') {
-    const a = clamp(s.hintT / 0.6, 0, 1);
-    text(ctx, level_.hint, g.w / 2, g.h - 14, { size: 11, color: Palette.dim, align: 'center', alpha: a });
-  }
+function render(s, ctx, g) {
+  const t = g.t;
+  const compact = g.w < 760;
+  const lay = layout(g, s.sim.level, compact);
+
+  ctx.fillStyle = Palette.bg;
+  ctx.fillRect(0, 0, g.w, g.h);
+
+  drawPlayfield(s, ctx, g, lay, t);
+  drawHUD(s, ctx, g, compact);
+  drawHintBar(s, ctx, g, lay, compact);
 
   if (s.flash > 0) {
-    ctx.globalAlpha = s.flash * 0.28;
+    ctx.save();
+    ctx.globalAlpha = clamp(s.flash * 0.28, 0, 1);
     ctx.fillStyle = Palette.hot;
     ctx.fillRect(0, 0, g.w, g.h);
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
-  if (s.phase === 'cleared' && s.lastUsed) {
-    ctx.globalAlpha = clamp(s.timer / 0.6, 0, 1);
-    text(ctx, `CLEARED IN ${s.lastUsed} RUN${s.lastUsed === 1 ? '' : 'S'}${s.lastImproved ? '  ·  NEW BEST' : ''}`,
-      g.w / 2, g.h / 2, { size: 15, color: Palette.accent, align: 'center', weight: 700 });
-    ctx.globalAlpha = 1;
+  if (s.phase === 'cleared' && Number.isFinite(s.lastUsed)) {
+    const a = clamp(s.timer / 0.6, 0, 1);
+    const msg = `CLEARED IN ${s.lastUsed} RUN${s.lastUsed === 1 ? '' : 'S'}`;
+    const sub = s.lastImproved ? 'NEW BEST'
+      : (Number.isFinite(s.lastPar) ? `GHOST PAR ${s.lastPar}` : '');
+    const bw = Math.min(g.w - 40, 340);
+    const bh = sub ? 76 : 54;
+    const bx = (g.w - bw) / 2, by = g.h / 2 - bh / 2;
+    ctx.save();
+    ctx.globalAlpha = a;
+    panel(ctx, bx, by, bw, bh, {
+      fill: 'rgba(13,16,24,0.94)', border: ACCENT_35, radius: 6,
+      glowColor: ACCENT_35, glowBlur: 26,
+    });
+    ctx.restore();
+    text(ctx, msg, g.w / 2, by + 34, {
+      size: Type.body, color: Palette.accent, align: 'center', baseline: 'alphabetic', weight: 700, alpha: a,
+    });
+    if (sub) {
+      text(ctx, sub, g.w / 2, by + 58, {
+        size: Type.label, color: s.lastImproved ? Palette.warm : Palette.dim,
+        align: 'center', baseline: 'alphabetic', weight: 600, alpha: a,
+      });
+    }
   }
 
   if (s.phase === 'intro') {
-    const narrow = g.w < 520;
-    const k = narrow ? g.w / 520 : 1;
-    ctx.fillStyle = 'rgba(7,8,13,0.88)';
-    ctx.fillRect(0, 0, g.w, g.h);
-    text(ctx, 'AFTERIMAGE', g.w / 2, g.h / 2 - 62, { size: 30 * Math.max(k, 0.62), color: Palette.accent, align: 'center', weight: 700 });
-    text(ctx, 'Death or retry records your run as a ghost.', g.w / 2, g.h / 2 - 22, { size: 13 * Math.max(k, 0.72), color: Palette.ink, align: 'center' });
-    text(ctx, 'Park a ghost on a plate to hold a door open.', g.w / 2, g.h / 2 - 2, { size: 12 * Math.max(k, 0.72), color: Palette.dim, align: 'center' });
-    text(ctx, 'Climb a ghost\'s head to reach higher ledges.', g.w / 2, g.h / 2 + 18, { size: 12 * Math.max(k, 0.72), color: Palette.dim, align: 'center' });
-    text(ctx, '←/→ jump SPACE  ·  R retries', g.w / 2, g.h / 2 + 46, { size: 12 * Math.max(k, 0.72), color: Palette.dim, align: 'center' });
-    const p = 0.5 + 0.5 * Math.sin(g.t * 3);
-    text(ctx, 'PRESS SPACE', g.w / 2, g.h / 2 + 78, { size: 13 * Math.max(k, 0.72), color: Palette.warm, align: 'center', weight: 700, alpha: 0.4 + p * 0.6 });
+    titleCard(ctx, g, {
+      title: 'AFTERIMAGE',
+      tagline: 'Death or retry records your run as a ghost.',
+      lines: [
+        'Park a ghost on a plate to hold a door open.',
+        "Climb a ghost's head to reach higher ledges.",
+        '',
+        '← →  MOVE     SPACE  JUMP     R  RETRY',
+      ],
+      prompt: 'PRESS SPACE',
+      t, accent: Palette.accent,
+    });
   }
 
   if (s.phase === 'complete') {
-    ctx.fillStyle = 'rgba(7,8,13,0.9)';
-    ctx.fillRect(0, 0, g.w, g.h);
-    text(ctx, 'ALL LEVELS CLEARED', g.w / 2, g.h / 2 - 26, { size: 24, color: Palette.accent, align: 'center', weight: 700 });
-    text(ctx, `${s.runDeaths} retries this run.`, g.w / 2, g.h / 2 + 4, { size: 13, color: Palette.ink, align: 'center' });
-    text(ctx, 'ENTER to run it back', g.w / 2, g.h / 2 + 30, { size: 12, color: Palette.dim, align: 'center' });
+    const d = Number.isFinite(s.runDeaths) ? s.runDeaths : 0;
+    titleCard(ctx, g, {
+      title: 'ALL CLEAR',
+      tagline: `${LEVELS.length} levels, every echo spent.`,
+      lines: [`${d} retr${d === 1 ? 'y' : 'ies'} this run.`],
+      prompt: 'ENTER TO RUN IT BACK',
+      t, accent: Palette.accent,
+    });
   }
 
-  s.timerT = g.t;
+  vignette(ctx, g, 0.4);
 }
-
-// wrap render to stamp g.t onto state before first call (kit calls render(state,...))
-const _render = render;
-function renderWrap(s, ctx, g) { s.timerT = g.t; _render(s, ctx, g); }
 
 // ---------------------------------------------------------------- boot + self-test
 
-const game = boot({ id: 'afterimage', title: 'Afterimage', seed: 1, init, update, render: renderWrap });
+const game = boot({ id: 'afterimage', title: 'Afterimage', seed: 1, init, update, render });
 
 registerSelftest('afterimage', (check, log) => {
   const dt = 1 / 60;

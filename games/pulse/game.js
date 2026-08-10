@@ -18,6 +18,7 @@
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, randomSeedString, TAU,
+  Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
 } from '../../shared/kit.js';
 import { compose, verifyChart, PHYS } from './compose.js';
 import { makeSim, stepSim, autoRun, idleRun, playerHeight } from './sim.js';
@@ -31,13 +32,23 @@ const START_SEED = 'PULSE1';
 // ---------------------------------------------------------------- layout
 
 function layout(g) {
+  // The HUD strip owns the top 56px; the playfield starts underneath it and is
+  // clipped to that region, so nothing ever renders behind the status bar.
+  const hudH = HUD_H;
   const groundY = Math.round(g.h * 0.74);
   const pxPerSec = clamp(g.w / 3.1, 150, 560);
   const vScale = clamp((groundY - 44) / 230, 0.55, 3.4);
   const playerX = Math.round(g.w * 0.27);
-  const bandTop = clamp(Math.min(g.h * 0.12, groundY - SPIKE_H * vScale - 90), 8, Math.max(8, groundY - 60));
-  const bandBot = clamp(groundY - 150 * vScale * 0.55, bandTop + 24, groundY - 20);
-  return { groundY, pxPerSec, vScale, playerX, bandTop, bandBot, u: clamp(Math.min(g.w / 960, g.h / 600), 0.55, 1.35) };
+  const bandLo = hudH + 26;
+  const bandTop = clamp(Math.min(g.h * 0.12, groundY - SPIKE_H * vScale - 90),
+    bandLo, Math.max(bandLo, groundY - 60));
+  const bandBot = clamp(groundY - 150 * vScale * 0.55, bandTop + 24, Math.max(bandTop + 24, groundY - 20));
+  const horizonY = Math.round(hudH + (groundY - hudH) * 0.62);
+  return {
+    hudH, groundY, pxPerSec, vScale, playerX, bandTop, bandBot, horizonY,
+    compact: g.w < 760,
+    u: clamp(Math.min(g.w / 960, g.h / 600), 0.55, 1.35),
+  };
 }
 
 function lowerBound(arr, t) {
@@ -45,6 +56,21 @@ function lowerBound(arr, t) {
   while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].time < t) lo = m + 1; else hi = m; }
   return lo;
 }
+
+// Render-only integer hash: gives the starfield and the skyline stable positions
+// without touching the simulation or calling Math.random().
+function h01(n) {
+  let x = Math.imul(n ^ 0x9e3779b9, 2246822519) >>> 0;
+  x ^= x >>> 15;
+  x = Math.imul(x, 3266489917) >>> 0;
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+}
+const imod = (n, m) => ((n % m) + m) % m;
+
+// Monospace advance is ~0.6em; measuring this way keeps HUD layout identical
+// headless and in the browser.
+const mw = (str, size) => String(str).length * size * 0.6;
+const labelW = (str) => String(str).length * (Type.label * 0.6 + Type.label * 0.14);
 
 // ---------------------------------------------------------------- state
 
@@ -215,16 +241,177 @@ function update(s, dt, g) {
 
 // ---------------------------------------------------------------- render
 
-function drawBackdrop(s, ctx, g, L, beat) {
-  const sim = s.sim;
+function drawSky(s, ctx, g) {
   const grd = ctx.createLinearGradient(0, 0, 0, g.h);
   grd.addColorStop(0, Palette.bg);
   grd.addColorStop(0.62, Palette.bg2);
   grd.addColorStop(1, '#05060a');
+  ctx.save();
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, g.w, g.h);
+  ctx.restore();
+}
 
-  // horizon glow — breathes on every kick
+// --- atmosphere: everything between the HUD and the track. Deterministic — it is
+// the composed note table and sim.t, never new randomness — and deliberately low
+// contrast so the runner, the notes and the spikes always win the eye.
+
+/** Slow drifting dust so the sky is a place, not a void. */
+function drawStars(s, ctx, g, L) {
+  const n = L.compact ? 26 : 46;
+  const top = L.hudH + 10;
+  const span = Math.max(20, L.horizonY - 26 - top);
+  const drift = s.sim.t * L.pxPerSec * 0.018;
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const x = imod(h01(i * 7 + 11) * g.w - drift, g.w);
+    const y = top + h01(i * 13 + 5) * span;
+    const tw = 0.5 + 0.5 * Math.sin(g.t * (0.7 + h01(i) * 1.6) + i * 1.7);
+    ctx.globalAlpha = 0.07 + tw * 0.15;
+    ctx.fillStyle = i % 5 === 0 ? Palette.accent2 : Palette.ink;
+    const sz = i % 3 === 0 ? 2 : 1;
+    ctx.fillRect(Math.round(x), Math.round(y), sz, sz);
+  }
+  ctx.restore();
+}
+
+/** Reused scratch — the analyser must not allocate 60 times a second. */
+const SPEC = new Float64Array(32);
+
+/**
+ * The analyser. Every bar is a real slice of the song: notes that sounded in the
+ * last 0.6s are binned by frequency, so the kick pumps the left of the sky, the
+ * hats sparkle on the right and the lead walks the middle. Bounded work per frame —
+ * a binary search plus the handful of notes inside the window.
+ */
+function drawSpectrum(s, ctx, g, L) {
+  const sim = s.sim;
+  const notes = sim.song.notes;
+  const N = L.compact ? 16 : 28;
+  const WIN = 0.6;
+  for (let b = 0; b < N; b++) SPEC[b] = 0;
+  const t = sim.t;
+  for (let i = lowerBound(notes, t - WIN); i < notes.length; i++) {
+    const n = notes[i];
+    if (n.time > t) break;
+    const w = 1 - (t - n.time) / WIN;
+    if (w <= 0) continue;
+    const f = clamp(Math.log2(Math.max(24, n.freq) / 40) / 8.2, 0, 0.9999);
+    SPEC[Math.min(N - 1, Math.floor(f * N))] += w * w * (n.velocity || 0.5);
+  }
+
+  const base = L.horizonY;
+  const maxH = Math.max(24, base - L.hudH - 18);
+  const cw = g.w / N;
+  const bw = Math.max(3, cw * 0.62);
+  ctx.save();
+  for (let b = 0; b < N; b++) {
+    const idle = 0.05 + 0.035 * Math.sin(g.t * 1.1 + b * 0.7);
+    const lvl = clamp(SPEC[b] / 1.7, 0, 1);
+    const hh = (idle + lvl * 0.9) * maxH;
+    const x = b * cw + (cw - bw) / 2;
+    ctx.fillStyle = b < N * 0.3 ? Palette.violet : (b < N * 0.68 ? Palette.accent2 : Palette.accent);
+    ctx.globalAlpha = 0.06 + lvl * 0.12;
+    ctx.fillRect(x, base - hh, bw, hh);
+    ctx.globalAlpha = 0.12 + lvl * 0.32;
+    ctx.fillRect(x, base - hh - 2, bw, 2);
+    ctx.globalAlpha = 0.04 + lvl * 0.06;       // reflection on the far plane
+    ctx.fillRect(x, base + 1, bw, hh * 0.28);
+  }
+  ctx.restore();
+}
+
+/**
+ * Parallax silhouettes. Heights come from the seed's own chord progression and
+ * scale, so every song stands in a different skyline; the two layers scroll at
+ * different rates to give the scene depth.
+ */
+function drawSkyline(s, ctx, g, L, spacing, par, maxFrac, fill, alpha, cap) {
+  const song = s.sim.song;
+  const prog = song.progression;
+  const steps = song.scaleSteps;
+  const sp = Math.max(34, spacing * L.u);
+  const scroll = s.sim.t * L.pxPerSec * par;
+  const first = Math.floor(scroll / sp) - 1;
+  const count = Math.min(56, Math.ceil(g.w / sp) + 3);
+  const maxH = Math.max(16, (L.horizonY - L.hudH) * maxFrac);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = fill;
+  for (let k = 0; k < count; k++) {
+    const idx = first + k;
+    const d = prog[imod(idx, prog.length)];
+    const st = steps[imod(idx * 5 + d, steps.length)];
+    const hh = Math.round((0.24 + (st / 11) * 0.76) * maxH);
+    const w = Math.round(sp * (0.34 + imod(idx * 3 + st, 3) * 0.13));
+    ctx.fillRect(Math.round(idx * sp - scroll), L.horizonY - hh, w, hh + 1);
+  }
+  if (cap) {
+    ctx.globalAlpha = alpha * (0.5 + s.sim.kickP * 0.9);
+    ctx.fillStyle = cap;
+    for (let k = 0; k < count; k++) {
+      const idx = first + k;
+      const d = prog[imod(idx, prog.length)];
+      const st = steps[imod(idx * 5 + d, steps.length)];
+      const hh = Math.round((0.24 + (st / 11) * 0.76) * maxH);
+      const w = Math.round(sp * (0.34 + imod(idx * 3 + st, 3) * 0.13));
+      ctx.fillRect(Math.round(idx * sp - scroll), L.horizonY - hh, w, 1);
+    }
+  }
+  ctx.restore();
+}
+
+/** The horizon itself: a bass-fed wash, a hard line, and a light at the strike point. */
+function drawHorizon(s, ctx, g, L) {
+  const sim = s.sim;
+  const y = L.horizonY;
+  const gh = Math.max(30, (y - L.hudH) * 0.55);
+  ctx.save();
+  const gr = ctx.createLinearGradient(0, y - gh, 0, y);
+  gr.addColorStop(0, 'rgba(160,107,255,0)');
+  gr.addColorStop(1, sim.bassP > 0.4 ? 'rgba(160,107,255,0.17)' : 'rgba(59,167,255,0.13)');
+  ctx.globalAlpha = 0.5 + sim.kickP * 0.4;
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, y - gh, g.w, gh);
+  ctx.globalAlpha = 0.35 + sim.kickP * 0.35;
+  ctx.fillStyle = Palette.accent2;
+  ctx.fillRect(0, y, g.w, 1);
+  ctx.restore();
+  orb(ctx, L.playerX, y, 4 + sim.kickP * 9, 'rgba(59,167,255,0.20)', { glow: 0.9, rim: false });
+}
+
+/** Ground plane between the horizon and the track — lines flow toward the camera. */
+function drawGroundPlane(s, ctx, g, L) {
+  const depth = Math.max(1, L.groundY - L.horizonY);
+  const flow = (s.sim.t * 0.5) % 1;
+  ctx.save();
+  ctx.strokeStyle = Palette.grid;
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 8; k++) {
+    const f = (k + flow) / 8;
+    const y = L.horizonY + depth * f * f;
+    ctx.globalAlpha = 0.05 + f * 0.17;
+    ctx.beginPath();
+    ctx.moveTo(0, Math.round(y) + 0.5);
+    ctx.lineTo(g.w, Math.round(y) + 0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawAtmosphere(s, ctx, g, L) {
+  drawStars(s, ctx, g, L);
+  drawSpectrum(s, ctx, g, L);
+  drawSkyline(s, ctx, g, L, 58, 0.05, 0.5, Palette.grid, 0.55, 'rgba(59,167,255,0.35)');
+  drawSkyline(s, ctx, g, L, 104, 0.14, 0.8, '#080a11', 0.92, 'rgba(160,107,255,0.30)');
+  drawHorizon(s, ctx, g, L);
+  drawGroundPlane(s, ctx, g, L);
+}
+
+function drawBackdrop(s, ctx, g, L, beat) {
+  const sim = s.sim;
+
+  // ground glow — breathes on every kick
   const k = sim.kickP;
   ctx.save();
   ctx.globalAlpha = 0.1 + k * 0.4;
@@ -454,138 +641,175 @@ function drawHud(s, ctx, g, L) {
   const sim = s.sim;
   const song = sim.song;
   const u = L.u;
+  const compact = L.compact;
 
-  // progress
-  const p = clamp(sim.t / song.duration, 0, 1);
-  ctx.fillStyle = Palette.grid;
-  ctx.fillRect(0, 0, g.w, 3);
-  ctx.fillStyle = Palette.accent;
-  ctx.fillRect(0, 0, g.w * p, 3);
+  hudStrip(ctx, g);
 
-  text(ctx, String(sim.score).padStart(6, '0'), 12, 12, { size: 24 * u, color: Palette.ink, weight: 700 });
-  if (sim.combo > 1) {
-    text(ctx, `x${sim.mult}  ${sim.combo} combo`, 12, 12 + 28 * u, {
-      size: 12 * u, color: sim.mult > 1 ? Palette.warm : Palette.dim, weight: 700,
-    });
-  }
+  // where you are in the track, along the bottom edge of the strip
+  meter(ctx, 0, HUD_H - 3, g.w, 3, clamp(sim.t / Math.max(1, song.duration), 0, 1),
+    { color: Palette.accent, track: 'rgba(255,255,255,0.05)', radius: 0, glow: false });
 
-  // lives
+  // --- left cluster: the run
+  const scoreStr = String(sim.score).padStart(6, '0');
+  stat(ctx, 18, 20, 'SCORE', scoreStr, { color: Palette.ink });
+  let lx = 18 + Math.max(mw(scoreStr, Type.value), labelW('SCORE')) + 28;
+
+  // lives: the label comes from stat() so the typography matches, the value is pips
+  stat(ctx, lx, 20, 'LIVES', '', { color: Palette.hot });
+  const pipW = 11, pipGap = 5;
   for (let i = 0; i < LIVES; i++) {
-    ctx.globalAlpha = i < sim.lives ? 1 : 0.2;
-    ctx.fillStyle = i < sim.lives ? Palette.hot : Palette.dim;
-    roundRect(ctx, g.w - 14 - (i + 1) * 14 * u, 12, 9 * u, 9 * u, 2);
-    ctx.fill();
+    const alive = i < sim.lives;
+    const px = lx + i * (pipW + pipGap);
+    if (alive) {
+      withGlow(ctx, Palette.hot, 9, () => {
+        ctx.fillStyle = Palette.hot;
+        roundRect(ctx, px, 34, pipW, 11, 3);
+        ctx.fill();
+      });
+    } else {
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = Palette.dim;
+      roundRect(ctx, px, 34, pipW, 11, 3);
+      ctx.fill();
+      ctx.restore();
+    }
   }
-  ctx.globalAlpha = 1;
+  lx += Math.max(LIVES * (pipW + pipGap) - pipGap, labelW('LIVES')) + 28;
 
-  text(ctx, `SEED ${s.seed}`, g.w - 12, 12 + 16 * u, { size: 11 * u, color: Palette.dim, align: 'right' });
-  text(ctx, `${song.bpm} BPM · ${song.key} ${song.scale.toUpperCase()}`, g.w - 12, 12 + 31 * u,
-    { size: 10 * u, color: Palette.dim, align: 'right', alpha: 0.8 });
-  if (s.seedBest > 0) {
-    text(ctx, `SEED BEST ${s.seedBest}`, g.w - 12, 12 + 45 * u, { size: 10 * u, color: Palette.dim, align: 'right', alpha: 0.7 });
+  if (!compact) {
+    const comboV = String(sim.combo);
+    stat(ctx, lx, 20, 'COMBO', comboV, {
+      valueSize: Type.body, color: sim.combo > 0 ? Palette.ink : Palette.dim,
+    });
+    lx += Math.max(mw(comboV, Type.body), labelW('COMBO')) + 24;
+    const multV = 'x' + sim.mult;
+    stat(ctx, lx, 20, 'MULT', multV, {
+      valueSize: Type.body, color: sim.mult > 1 ? Palette.warm : Palette.dim,
+    });
+    lx += Math.max(mw(multV, Type.body), labelW('MULT'));
+  }
+
+  // --- right cluster: the song. Laid out right to left, dropping the least
+  // important stat first when the two clusters would collide.
+  let rx = g.w - 18;
+  const seedSize = compact ? Type.body : Type.value;
+  stat(ctx, rx, 20, 'SEED', s.seed, { align: 'right', color: Palette.accent, valueSize: seedSize });
+  rx -= Math.max(mw(s.seed, seedSize), labelW('SEED')) + 26;
+
+  const bpmV = String(song.bpm);
+  const bpmW = Math.max(mw(bpmV, Type.body), labelW('BPM'));
+  if (rx - bpmW > lx + 16) {
+    stat(ctx, rx, 20, 'BPM', bpmV, { align: 'right', valueSize: Type.body });
+    rx -= bpmW + 26;
+  }
+
+  // the full mode name if it fits, otherwise just the tonic, otherwise nothing
+  const keyFull = `${song.key} ${song.scale.toUpperCase()}`;
+  for (const keyV of (mw(keyFull, Type.body) < g.w * 0.3 ? [keyFull, song.key] : [song.key])) {
+    const keyW = Math.max(mw(keyV, Type.body), labelW('KEY'));
+    if (rx - keyW > lx + 16) {
+      stat(ctx, rx, 20, 'KEY', keyV, { align: 'right', valueSize: Type.body });
+      break;
+    }
   }
 
   // judgement pop
   if (sim.judgeAge < 0.5 && sim.lastJudge) {
     const a = clamp(1 - sim.judgeAge / 0.5, 0, 1);
     const rise = (1 - a) * 26;
-    text(ctx, sim.lastJudge === 'perfect' ? 'PERFECT' : 'GOOD',
+    const perfect = sim.lastJudge === 'perfect';
+    text(ctx, perfect ? 'PERFECT' : 'GOOD',
       L.playerX, L.groundY - (86 + 44 * u) - rise, {
-        size: (sim.lastJudge === 'perfect' ? 18 : 14) * u,
-        color: sim.lastJudge === 'perfect' ? Palette.accent : Palette.accent2,
+        size: perfect ? Type.value : Type.body,
+        color: perfect ? Palette.accent : Palette.accent2,
         align: 'center', weight: 700, alpha: a,
       });
   }
 
   if (s.hint > 0 && s.phase === 'play') {
     text(ctx, 'SPACE on the marker  ·  SPACE again in midair to slam-slide',
-      g.w / 2, g.h - 18, { size: 11 * u, color: Palette.dim, align: 'center', alpha: clamp(s.hint, 0, 1) * 0.9 });
+      g.w / 2, g.h - 20, { size: Type.label, color: Palette.dim, align: 'center', alpha: clamp(s.hint, 0, 1) * 0.9 });
   }
   if (s.copied > 0) {
-    text(ctx, `copied ${s.seed}`, g.w / 2, 20, { size: 11 * u, color: Palette.accent, align: 'center', alpha: clamp(s.copied, 0, 1) });
+    const a = clamp(s.copied, 0, 1);
+    const label = `SEED ${s.seed} COPIED`;
+    const w = mw(label, Type.small) + 44;
+    ctx.save();
+    ctx.globalAlpha = a;
+    panel(ctx, (g.w - w) / 2, HUD_H + 16, w, 34, { glowColor: Palette.accent, glowBlur: 18 });
+    ctx.restore();
+    text(ctx, label, g.w / 2, HUD_H + 38, {
+      size: Type.small, color: Palette.accent, align: 'center', baseline: 'alphabetic', weight: 700, alpha: a,
+    });
   }
-  if (s.muted) text(ctx, 'MUTED', 12, g.h - 20, { size: 10 * u, color: Palette.dim });
-}
-
-function panel(ctx, g, w, h) {
-  const x = (g.w - w) / 2, y = (g.h - h) / 2;
-  ctx.fillStyle = 'rgba(7,8,13,0.9)';
-  ctx.fillRect(0, 0, g.w, g.h);
-  ctx.fillStyle = Palette.panel;
-  ctx.globalAlpha = 0.9;
-  roundRect(ctx, x, y, w, h, 12);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = Palette.grid;
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 12);
-  ctx.stroke();
-  return { x, y };
+  if (s.muted) text(ctx, 'MUTED', 18, g.h - 20, { size: Type.micro, color: Palette.dim });
 }
 
 function drawOverlays(s, ctx, g, L) {
   const u = L.u;
   const cx = g.w / 2;
   const sim = s.sim;
+  const song = sim.song;
+  const narrow = g.w < 620;
 
   if (s.phase === 'intro') {
-    panel(ctx, g, Math.min(g.w - 24, 580 * u), Math.min(g.h - 24, 370 * u));
-    let y = g.h / 2 - 152 * u;
-    text(ctx, 'PULSE', cx, y, { size: 40 * u, color: Palette.accent, align: 'center', weight: 700 });
-    y += 52 * u;
-    text(ctx, 'The seed writes the song. The song writes the level.', cx, y, { size: 13 * u, color: Palette.ink, align: 'center' });
-    y += 20 * u;
-    text(ctx, 'Every note you hear is an obstacle you run — press on the beat.', cx, y, { size: 11 * u, color: Palette.dim, align: 'center' });
-    y += 30 * u;
-    text(ctx, 'SPACE / CLICK — jump   (hold for height)', cx, y, { size: 12 * u, color: Palette.warm, align: 'center' });
-    y += 18 * u;
-    text(ctx, 'SPACE again in midair — slam down and slide under', cx, y, { size: 12 * u, color: Palette.violet, align: 'center' });
-    y += 26 * u;
-    text(ctx, `SEED ${s.seed}   ·   ${sim.song.bpm} BPM   ·   ${sim.song.key} ${sim.song.scale}`,
-      cx, y, { size: 12 * u, color: Palette.ink, align: 'center', weight: 700 });
-    y += 17 * u;
-    text(ctx, `${sim.song.notes.length} notes · ${sim.chart.length} obstacles · ${Math.round(sim.song.duration)}s`,
-      cx, y, { size: 10 * u, color: Palette.dim, align: 'center' });
-    y += 17 * u;
-    text(ctx, 'S type a seed   ·   N re-roll   ·   C copy   ·   R restart   ·   M mute',
-      cx, y, { size: 10 * u, color: Palette.dim, align: 'center', alpha: 0.85 });
-    const p = 0.5 + 0.5 * Math.sin(s.introT * 3);
-    text(ctx, 'PRESS SPACE', cx, g.h / 2 + 136 * u, {
-      size: 14 * u, color: Palette.warm, align: 'center', weight: 700, alpha: 0.35 + p * 0.65,
+    titleCard(ctx, g, {
+      title: 'PULSE',
+      tagline: narrow ? 'The seed writes the song.' : 'The seed writes the song. The song writes the level.',
+      lines: [
+        'SPACE / CLICK — jump  (hold for height)',
+        'SPACE again midair — slam down and slide under',
+        '',
+        `SEED ${s.seed}  ·  ${song.bpm} BPM  ·  ${song.key} ${song.scale}`,
+        `${song.notes.length} notes  ·  ${sim.chart.length} obstacles  ·  ${Math.round(song.duration)}s`,
+        'S seed  ·  N re-roll  ·  C copy  ·  R restart  ·  M mute',
+      ],
+      prompt: 'PRESS SPACE',
+      t: s.introT,
+      accent: Palette.accent,
     });
   }
 
   if (s.phase === 'over' || s.phase === 'win') {
     const won = s.phase === 'win';
-    panel(ctx, g, Math.min(g.w - 24, 500 * u), Math.min(g.h - 24, 296 * u));
-    let y = g.h / 2 - 118 * u;
-    text(ctx, won ? 'TRACK CLEARED' : 'RUN ENDED', cx, y, {
-      size: 26 * u, color: won ? Palette.accent : Palette.hot, align: 'center', weight: 700,
-    });
-    y += 40 * u;
-    text(ctx, String(sim.score), cx, y, { size: 32 * u, color: Palette.ink, align: 'center', weight: 700 });
-    y += 40 * u;
     const total = sim.perfect + sim.good + sim.missed;
     const acc = total ? Math.round((sim.perfect / total) * 100) : 0;
-    text(ctx, `${sim.perfect} perfect · ${sim.good} good · ${sim.missed} missed · ${acc}% perfect`,
-      cx, y, { size: 11 * u, color: Palette.dim, align: 'center' });
-    y += 18 * u;
-    text(ctx, `best combo ${sim.maxCombo} · ${sim.cleared}/${sim.chart.length} obstacles cleared`,
-      cx, y, { size: 11 * u, color: Palette.dim, align: 'center' });
-    y += 26 * u;
-    text(ctx, `SEED ${s.seed}   best ${Math.max(s.seedBest, sim.score)}   ·   all-time ${Math.max(s.best, sim.score)}`,
-      cx, y, { size: 11 * u, color: Palette.warm, align: 'center' });
-    y += 26 * u;
-    text(ctx, 'SPACE retry   ·   N new seed   ·   S type a seed   ·   C copy', cx, y,
-      { size: 11 * u, color: Palette.dim, align: 'center' });
+    // The three leading blank lines reserve the slot the score figure lands in.
+    titleCard(ctx, g, {
+      title: won ? 'TRACK CLEARED' : 'RUN ENDED',
+      tagline: null,
+      lines: [
+        '', '', '',
+        `${sim.perfect} PERFECT  ·  ${sim.good} GOOD  ·  ${sim.missed} MISSED  ·  ${acc}%`,
+        `BEST COMBO ${sim.maxCombo}  ·  ${sim.cleared}/${sim.chart.length} OBSTACLES CLEARED`,
+        `SEED ${s.seed}  ·  BEST ${Math.max(s.seedBest, sim.score)}  ·  ALL-TIME ${Math.max(s.best, sim.score)}`,
+      ],
+      prompt: 'SPACE retry  ·  N new seed  ·  S type a seed  ·  C copy',
+      t: s.introT,
+      accent: won ? Palette.accent : Palette.hot,
+    });
+    stat(ctx, cx, g.h / 2 - 44, 'FINAL SCORE', String(sim.score), {
+      align: 'center', valueSize: Type.big, color: won ? Palette.accent : Palette.ink,
+    });
   }
 
   if (s.seedEdit) {
-    panel(ctx, g, Math.min(g.w - 24, 440 * u), Math.min(g.h - 24, 180 * u));
-    text(ctx, 'SEED', cx, g.h / 2 - 60 * u, { size: 12 * u, color: Palette.dim, align: 'center', weight: 700 });
+    ctx.save();
+    ctx.fillStyle = 'rgba(7,8,13,0.88)';
+    ctx.fillRect(0, 0, g.w, g.h);
+    ctx.restore();
+    const w = Math.min(g.w - 40, 460);
+    const h = Math.min(g.h - 40, 172);
+    const x = (g.w - w) / 2, y = (g.h - h) / 2;
+    panel(ctx, x, y, w, h, { title: 'seed', glowColor: Palette.accent, glowBlur: 24, radius: 6 });
     const shown = s.seedBuf + (Math.floor(s.introT * 2.6) % 2 ? '_' : ' ');
-    text(ctx, shown || '_', cx, g.h / 2 - 26 * u, { size: 30 * u, color: Palette.accent, align: 'center', weight: 700 });
-    text(ctx, 'type or paste · ENTER to play · ESC to cancel', cx, g.h / 2 + 32 * u,
-      { size: 11 * u, color: Palette.dim, align: 'center' });
+    text(ctx, shown || '_', cx, y + h * 0.6, {
+      size: Type.big, color: Palette.accent, align: 'center', baseline: 'alphabetic', weight: 700,
+    });
+    text(ctx, 'type or paste  ·  ENTER to play  ·  ESC to cancel', cx, y + h - 22, {
+      size: Type.small, color: Palette.dim, align: 'center', baseline: 'alphabetic',
+    });
   }
 }
 
@@ -595,20 +819,33 @@ function render(s, ctx, g) {
   const sim = s.sim;
   const beat = sim.kickP;
 
+  drawSky(s, ctx, g);
+
+  // Everything that is "the world" is clipped below the status strip, so the HUD
+  // always sits on clean chrome no matter how tall the scene wants to be.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, L.hudH, g.w, Math.max(1, g.h - L.hudH));
+  ctx.clip();
+  drawAtmosphere(s, ctx, g, L);
   drawBackdrop(s, ctx, g, L, beat);
   drawTrack(s, ctx, g, L);
   drawRunner(s, ctx, g, L);
   FX.draw(ctx);
+  ctx.restore();
+
   drawHud(s, ctx, g, L);
 
   if (sim.flash > 0.01) {
+    ctx.save();
     ctx.globalAlpha = sim.flash * 0.3;
     ctx.fillStyle = Palette.hot;
     ctx.fillRect(0, 0, g.w, g.h);
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   drawOverlays(s, ctx, g, L);
+  vignette(ctx, g, 0.4);
 }
 
 // ---------------------------------------------------------------- boot

@@ -15,6 +15,7 @@
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
+  Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 import {
@@ -26,8 +27,7 @@ import {
 
 // ---------------------------------------------------------------- layout
 
-const TOP_PAD = 32;
-const BOT_PAD = 48;
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 const TOOL_META = {
   [TOOL_INK]: { key: '1', label: 'INK', color: Palette.warm, blurb: 'falls' },
@@ -36,14 +36,34 @@ const TOOL_META = {
   [TOOL_ERASE]: { key: '4', label: 'ERASE', color: Palette.hot, blurb: 'remove + refund' },
 };
 
+/**
+ * Chrome sizing. The HUD strip, the tool dock and the world viewport all derive from
+ * one place, so the layout stays coherent from a 700x500 window up to a full desktop.
+ * Below ~560px tall (or ~620px wide) everything switches to a compact variant rather
+ * than eating the playfield.
+ */
+function metrics(g) {
+  const compact = g.h < 560 || g.w < 620;
+  const hudH = compact ? 44 : HUD_H;
+  const chipH = compact ? 30 : 40;
+  const dockH = chipH + (compact ? 14 : 20);
+  return {
+    compact, hudH, chipH, dockH,
+    padX: compact ? 10 : 14,
+    top: hudH + (compact ? 6 : 10),
+    bot: dockH + (compact ? 6 : 10),
+  };
+}
+
 function getView(g) {
-  const availH = Math.max(120, g.h - TOP_PAD - BOT_PAD);
+  const m = metrics(g);
+  const availH = Math.max(120, g.h - m.top - m.bot);
   const availW = Math.max(120, g.w - 16);
   const scale = Math.max(0.05, Math.min(availW / WORLD_W, availH / WORLD_H));
   return {
     scale,
     ox: (g.w - WORLD_W * scale) / 2,
-    oy: TOP_PAD + (availH - WORLD_H * scale) / 2,
+    oy: m.top + (availH - WORLD_H * scale) / 2,
   };
 }
 
@@ -51,13 +71,14 @@ const toWorld = (g, x, y) => { const v = getView(g); return { x: (x - v.ox) / v.
 const toScreen = (g, x, y) => { const v = getView(g); return { x: v.ox + x * v.scale, y: v.oy + y * v.scale }; };
 
 function paletteRects(g) {
+  const m = metrics(g);
   const n = TOOLS.length;
-  const gap = 8;
-  const w = Math.min(148, Math.max(58, (g.w - 28 - gap * (n - 1)) / n));
-  const h = 30;
+  const gap = m.compact ? 7 : 10;
+  const w = Math.min(m.compact ? 132 : 170, Math.max(56, (g.w - 24 - gap * (n - 1)) / n));
+  const h = m.chipH;
   const totalW = w * n + gap * (n - 1);
   const x0 = (g.w - totalW) / 2;
-  const y = g.h - BOT_PAD + 9;
+  const y = g.h - m.dockH + (m.dockH - h) / 2;
   const out = [];
   for (let i = 0; i < n; i++) out.push({ x: x0 + i * (w + gap), y, w, h, tool: TOOLS[i] });
   return out;
@@ -350,60 +371,112 @@ function drawGoal(ctx, goal, t, glow, won) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
+  // inner target ring + cardinal ticks — makes the well read as a destination
+  ctx.save();
+  ctx.strokeStyle = Palette.accent;
+  ctx.globalAlpha = 0.28 + pulse * 0.18;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(goal.x, goal.y, r * 0.4, 0, TAU);
+  ctx.stroke();
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = i * (TAU / 4);
+    const cx = Math.cos(a), sy = Math.sin(a);
+    ctx.moveTo(goal.x + cx * r * 0.92, goal.y + sy * r * 0.92);
+    ctx.lineTo(goal.x + cx * r * 1.04, goal.y + sy * r * 1.04);
+  }
+  ctx.stroke();
+  ctx.restore();
+
   if (glow > 0 || won) {
+    ctx.save();
+    ctx.shadowColor = Palette.accent;
+    ctx.shadowBlur = 18;
     ctx.strokeStyle = Palette.accent;
     ctx.globalAlpha = won ? 0.5 : glow * 0.5;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(goal.x, goal.y, r * (won ? 1 + Math.sin(t * 4) * 0.05 : 1.2 - glow * 0.2), 0, TAU);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
+}
+
+/** Trace a body's centreline. Callers decide fill/stroke. */
+function inkPath(ctx, pts, n, closed) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < n; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  if (closed) ctx.closePath();
 }
 
 function drawBodies(ctx, sim, t) {
   for (const b of sim.bodies) {
     const n = b.closed ? b.pts.length - 1 : b.pts.length;
     if (n < 2) continue;
-    const stat = b.tool === TOOL_STATIC;
-    const col = stat ? Palette.accent2 : Palette.warm;
+    const pinned = b.tool === TOOL_STATIC;
+    const col = pinned ? Palette.accent2 : Palette.warm;
 
-    ctx.globalAlpha = 0.2;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = INK_R * 2.6;
+    // 1. bloom — a wide, low-alpha, glow-coloured pass under the crisp core, plus a
+    //    real shadow blur. This is what stops drawn ink reading as a debug polyline.
+    ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(b.pts[0].x, b.pts[0].y);
-    for (let i = 1; i < n; i++) ctx.lineTo(b.pts[i].x, b.pts[i].y);
-    if (b.closed) ctx.closePath();
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 14;
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = INK_R * 2.9;
+    inkPath(ctx, b.pts, n, b.closed);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.restore();
 
-    taperPath(ctx, b.pts, n, b.closed, INK_R);
+    // 2. core — width tapers along the stroke, with real round caps at both ends.
+    ctx.save();
     ctx.fillStyle = col;
+    taperPath(ctx, b.pts, n, b.closed, INK_R);
     ctx.fill();
-
-    // inner highlight — gives the stroke a wet-ink shine
-    ctx.globalAlpha = stat ? 0.34 : 0.42;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.1;
-    ctx.beginPath();
-    ctx.moveTo(b.pts[0].x, b.pts[0].y - 1);
-    for (let i = 1; i < n; i++) ctx.lineTo(b.pts[i].x, b.pts[i].y - 1);
-    if (b.closed) ctx.closePath();
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    if (stat) {
-      ctx.fillStyle = Palette.accent2;
-      ctx.globalAlpha = 0.8;
+    if (!b.closed) {
+      const capR = INK_R * 0.44;
       for (const e of [b.pts[0], b.pts[n - 1]]) {
         ctx.beginPath();
-        ctx.arc(e.x, e.y, INK_R * 0.85, 0, TAU);
+        ctx.arc(e.x, e.y, capR, 0, TAU);
         ctx.fill();
       }
-      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    // 3. wet-ink shine along the top edge of the stroke
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = pinned ? 0.3 : 0.38;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.1;
+    ctx.translate(0, -INK_R * 0.34);
+    inkPath(ctx, b.pts, n, b.closed);
+    ctx.stroke();
+    ctx.restore();
+
+    // 4. static ink is bolted to the world — show the rivets
+    if (pinned) {
+      ctx.save();
+      for (const e of [b.pts[0], b.pts[n - 1]]) {
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = Palette.accent2;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, INK_R * 0.95, 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = Palette.bg;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, INK_R * 0.34, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
     }
   }
 
@@ -411,6 +484,9 @@ function drawBodies(ctx, sim, t) {
   for (const b of sim.bodies) {
     for (const p of b.pts) {
       if (!p.pin) continue;
+      ctx.save();
+      ctx.shadowColor = Palette.violet;
+      ctx.shadowBlur = 10;
       ctx.strokeStyle = Palette.violet;
       ctx.lineWidth = 1.8;
       ctx.globalAlpha = 0.9;
@@ -421,7 +497,7 @@ function drawBodies(ctx, sim, t) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, 3, 0, TAU);
       ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.restore();
     }
   }
 }
@@ -429,19 +505,31 @@ function drawBodies(ctx, sim, t) {
 function drawBall(ctx, sim, t) {
   const b = sim.ball;
   if (!b.alive) return;
-  // trail
-  for (let i = 0; i < sim.trail.length; i++) {
-    const p = sim.trail[i];
-    const a = (i / sim.trail.length);
-    ctx.globalAlpha = a * 0.32;
-    ctx.fillStyle = Palette.accent;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, BALL_R * (0.25 + a * 0.7), 0, TAU);
-    ctx.fill();
+
+  // Motion trail. sim.trail is the fixed-step ring buffer of the last 26 ball
+  // positions, so the taper is frame-rate independent instead of drifting with rAF.
+  const tr = sim.trail;
+  if (tr.length > 1) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = Palette.accent;
+    ctx.shadowColor = Palette.accent;
+    ctx.shadowBlur = 8;
+    for (let i = 1; i < tr.length; i++) {
+      const f = i / (tr.length - 1);
+      ctx.globalAlpha = 0.04 + f * 0.3;
+      ctx.lineWidth = BALL_R * (0.2 + f * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(tr[i - 1].x, tr[i - 1].y);
+      ctx.lineTo(tr[i].x, tr[i].y);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
-  ctx.globalAlpha = 1;
 
   if (!sim.released) {
+    ctx.save();
     ctx.strokeStyle = Palette.ink;
     ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 4);
     ctx.lineWidth = 1.5;
@@ -449,139 +537,292 @@ function drawBall(ctx, sim, t) {
     ctx.beginPath();
     ctx.arc(b.x, b.y, BALL_R + 8, 0, TAU);
     ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
-  const gr = ctx.createRadialGradient(b.x - BALL_R * 0.35, b.y - BALL_R * 0.4, 1, b.x, b.y, BALL_R);
-  gr.addColorStop(0, '#ffffff');
-  gr.addColorStop(0.55, Palette.ink);
-  gr.addColorStop(1, '#93a2c0');
+  // halo + core + rim, then a specular so it still reads as a sphere and not a disc
+  orb(ctx, b.x, b.y, BALL_R, Palette.ink, { glow: 0.9, rim: true });
+  ctx.save();
+  const gr = ctx.createRadialGradient(
+    b.x - BALL_R * 0.34, b.y - BALL_R * 0.4, 0.5,
+    b.x - BALL_R * 0.34, b.y - BALL_R * 0.4, BALL_R * 1.15,
+  );
+  gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+  gr.addColorStop(0.42, 'rgba(255,255,255,0.16)');
+  gr.addColorStop(1, 'rgba(120,132,156,0.35)');
   ctx.fillStyle = gr;
-  ctx.shadowColor = 'rgba(233,237,247,0.6)';
-  ctx.shadowBlur = 12;
   ctx.beginPath();
   ctx.arc(b.x, b.y, BALL_R, 0, TAU);
   ctx.fill();
-  ctx.shadowBlur = 0;
+  ctx.restore();
 }
 
-function drawPreview(ctx, s, g) {
+function drawPreview(ctx, s, prep) {
   if (!s.drawing || s.raw.length === 0) return;
   const meta = TOOL_META[s.tool];
   if (s.tool === TOOL_PIN || s.tool === TOOL_ERASE) {
     const p = s.raw[s.raw.length - 1];
+    const r = s.tool === TOOL_PIN ? 12 : 20;
+    ctx.save();
+    ctx.shadowColor = meta.color;
+    ctx.shadowBlur = 12;
     ctx.strokeStyle = meta.color;
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.9;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, s.tool === TOOL_PIN ? 12 : 20, 0, TAU);
+    ctx.arc(p.x, p.y, r, 0, TAU);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.5;
+    ctx.setLineDash([3, 5]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * 0.55, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
     return;
   }
-  const prep = prepareStroke(s.raw);
-  const over = s.sim.inkUsed + (prep.ok ? prep.len : 0) > s.sim.inkBudget;
-  ctx.strokeStyle = over ? Palette.hot : meta.color;
-  ctx.globalAlpha = over ? 0.85 : 0.7;
-  ctx.lineWidth = INK_R * 2;
+  const over = s.sim.inkUsed + (prep && prep.ok ? prep.len : 0) > s.sim.inkBudget;
+  const col = over ? Palette.hot : meta.color;
+  ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.setLineDash(over ? [6, 6] : []);
-  ctx.beginPath();
-  ctx.moveTo(s.raw[0].x, s.raw[0].y);
-  for (let i = 1; i < s.raw.length; i++) ctx.lineTo(s.raw[i].x, s.raw[i].y);
+  ctx.strokeStyle = col;
+  ctx.shadowColor = col;
+  ctx.shadowBlur = 12;
+  ctx.globalAlpha = 0.2;
+  ctx.lineWidth = INK_R * 2.8;
+  inkPath(ctx, s.raw, s.raw.length, false);
   ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = over ? 0.9 : 0.75;
+  ctx.lineWidth = INK_R * 2;
+  ctx.setLineDash(over ? [6, 6] : []);
+  inkPath(ctx, s.raw, s.raw.length, false);
+  ctx.stroke();
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------- HUD
 
-function drawInkMeter(s, ctx, g) {
-  const L = LEVELS[s.levelIndex];
-  const w = Math.min(300, Math.max(140, g.w * 0.32));
-  const x = g.w - w - 12, y = 12, h = 9;
-  const frac = clamp(s.sim.inkUsed / Math.max(1, s.sim.inkBudget), 0, 1);
-  const parFrac = clamp(L.par / Math.max(1, s.sim.inkBudget), 0, 1);
-
-  ctx.fillStyle = Palette.panel;
-  roundRect(ctx, x, y, w, h, 4.5);
-  ctx.fill();
-
-  const low = frac > 0.86;
-  ctx.fillStyle = low ? Palette.hot : (s.sim.inkUsed <= L.par ? Palette.accent : Palette.warm);
-  if (frac > 0.001) { roundRect(ctx, x, y, Math.max(4, w * frac), h, 4.5); ctx.fill(); }
-
-  ctx.strokeStyle = Palette.dim;
-  ctx.globalAlpha = 0.85;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x + w * parFrac, y - 3);
-  ctx.lineTo(x + w * parFrac, y + h + 3);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  if (s.flash > 0) {
-    ctx.globalAlpha = s.flash * 0.55;
-    ctx.strokeStyle = Palette.hot;
-    ctx.lineWidth = 2;
-    roundRect(ctx, x - 2, y - 2, w + 4, h + 4, 6);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  const bestTxt = s.best === null ? '—' : String(s.best);
-  text(ctx, `INK ${Math.round(s.sim.inkUsed)}/${s.sim.inkBudget}   PAR ${L.par}   BEST ${bestTxt}`,
-    g.w - 12, y + h + 5, { size: 10, color: Palette.dim, align: 'right' });
+/** Width a stat() block will occupy, so a row of them can be packed without collisions. */
+function statWidth(ctx, label, value, valueSize, labelSize) {
+  ctx.save();
+  ctx.font = `700 ${valueSize}px ${MONO}`;
+  const vw = ctx.measureText(String(value)).width;
+  ctx.font = `600 ${labelSize}px ${MONO}`;
+  const lw = ctx.measureText(String(label).toUpperCase()).width * 1.16;   // letterSpacing 0.14em
+  ctx.restore();
+  return Math.max(vw, lw);
 }
 
-function drawPalette(s, ctx, g) {
-  const rs = paletteRects(g);
-  for (const r of rs) {
+/** A centred capsule for transient copy — hints, prompts, warnings. Auto-shrinks to fit. */
+function pill(ctx, g, cy, str, { fg = Palette.ink, border = Palette.grid, alpha = 1, size = Type.small }) {
+  const maxW = g.w - 28;
+  let sz = size;
+  ctx.save();
+  ctx.font = `700 ${sz}px ${MONO}`;
+  let tw = ctx.measureText(str).width;
+  while (tw + 30 > maxW && sz > 9) {
+    sz -= 1;
+    ctx.font = `700 ${sz}px ${MONO}`;
+    tw = ctx.measureText(str).width;
+  }
+  ctx.restore();
+  const h = Math.round(sz * 1.95);
+  const w = Math.min(maxW, tw + 30);
+  const a = clamp(alpha, 0, 1);
+  ctx.save();
+  ctx.globalAlpha = a;
+  panel(ctx, (g.w - w) / 2, cy - h / 2, w, h, {
+    fill: 'rgba(9,11,18,0.9)', border, radius: h / 2, glowColor: border, glowBlur: 12,
+  });
+  ctx.restore();
+  text(ctx, str, g.w / 2, cy + 0.5, {
+    size: sz, color: fg, align: 'center', baseline: 'middle', weight: 700, alpha: a,
+  });
+}
+
+/**
+ * The top status strip: which level you are on, how much ink you have spent against
+ * the budget, the par you are chasing and your personal best. The ink meter spans the
+ * full strip width so it never has to compete with the numbers for horizontal room.
+ */
+function drawHud(s, ctx, g, m, prep) {
+  const L = LEVELS[s.levelIndex];
+  hudStrip(ctx, g, { h: m.hudH });
+
+  const padX = m.padX;
+  const labelY = m.compact ? 16 : 19;
+  const vs = m.compact ? 15 : 20;
+  const ls = m.compact ? Type.micro : Type.label;
+
+  const budget = Math.max(1, s.sim.inkBudget);
+  const used = Math.round(s.sim.inkUsed);
+  const frac = clamp(s.sim.inkUsed / budget, 0, 1);
+  const low = frac > 0.86;
+  const inkColor = low ? Palette.hot : (s.sim.inkUsed <= L.par ? Palette.accent : Palette.warm);
+
+  const items = [
+    { label: 'ink', value: `${used}/${s.sim.inkBudget}`, color: inkColor },
+    { label: 'par', value: String(L.par), color: Palette.ink },
+    { label: 'best', value: s.best === null ? '—' : String(s.best), color: s.best === null ? Palette.dim : Palette.accent2 },
+  ];
+  const gap = m.compact ? 13 : 20;
+  const widths = items.map((it) => statWidth(ctx, it.label, it.value, vs, ls));
+  let total = gap * (items.length - 1);
+  for (const w of widths) total += w;
+
+  let cx = g.w - padX - total;
+  const groupLeft = cx;
+  for (let i = 0; i < items.length; i++) {
+    cx += widths[i];
+    stat(ctx, cx, labelY, items[i].label, items[i].value, {
+      align: 'right', color: items[i].color, valueSize: vs, labelSize: ls,
+    });
+    cx += gap;
+  }
+
+  // level identity, sized down until it clears the numbers
+  const nn = String(s.levelIndex + 1).padStart(2, '0');
+  const NN = String(LEVELS.length).padStart(2, '0');
+  const nameMax = Math.max(48, groupLeft - padX - 14);
+  let nameSize = vs;
+  ctx.save();
+  ctx.font = `700 ${nameSize}px ui-serif, "New York", Palatino, Georgia, serif`;
+  while (nameSize > 12 && ctx.measureText(L.name).width > nameMax) {
+    nameSize -= 1;
+    ctx.font = `700 ${nameSize}px ui-serif, "New York", Palatino, Georgia, serif`;
+  }
+  ctx.restore();
+  stat(ctx, padX, labelY, `level ${nn}/${NN}`, L.name, {
+    valueSize: nameSize, labelSize: ls, mono: false, color: Palette.ink,
+  });
+
+  // ink meter, hugging the bottom edge of the strip
+  const mH = m.compact ? 4 : 5;
+  const mY = m.hudH - mH - (m.compact ? 5 : 6);
+  const mX = padX;
+  const mW = Math.max(20, g.w - padX * 2);
+  meter(ctx, mX, mY, mW, mH, frac, { color: inkColor, track: 'rgba(255,255,255,0.06)' });
+
+  // ghost of the stroke you are mid-way through drawing
+  if (prep && prep.ok) {
+    const pf = clamp((s.sim.inkUsed + prep.len) / budget, 0, 1);
+    if (pf > frac) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = s.sim.inkUsed + prep.len > s.sim.inkBudget ? Palette.hot : Palette.ink;
+      roundRect(ctx, mX + mW * frac, mY, Math.max(2, mW * (pf - frac)), mH, mH / 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // par marker
+  const parFrac = clamp(L.par / budget, 0, 1);
+  ctx.save();
+  ctx.strokeStyle = Palette.ink;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(mX + mW * parFrac, mY - 3.5);
+  ctx.lineTo(mX + mW * parFrac, mY + mH + 3.5);
+  ctx.stroke();
+  ctx.restore();
+
+  if (s.flash > 0) {
+    ctx.save();
+    ctx.globalAlpha = clamp(s.flash, 0, 1) * 0.7;
+    ctx.strokeStyle = Palette.hot;
+    ctx.lineWidth = 2;
+    roundRect(ctx, mX - 2.5, mY - 2.5, mW + 5, mH + 5, (mH + 5) / 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/** The bottom tool dock. Selected chip = accent border, glow, filled hotkey badge. */
+function drawDock(s, ctx, g, m) {
+  const dockTop = g.h - m.dockH;
+  ctx.save();
+  ctx.fillStyle = 'rgba(13,16,24,0.92)';
+  ctx.fillRect(0, dockTop, g.w, m.dockH);
+  ctx.strokeStyle = Palette.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, dockTop + 0.5);
+  ctx.lineTo(g.w, dockTop + 0.5);
+  ctx.stroke();
+  ctx.restore();
+
+  const labelSize = m.compact ? Type.label : Type.small;
+  for (const r of paletteRects(g)) {
     const meta = TOOL_META[r.tool];
     const on = s.tool === r.tool;
-    ctx.fillStyle = on ? 'rgba(255,255,255,0.06)' : Palette.panel;
-    roundRect(ctx, r.x, r.y, r.w, r.h, 7);
-    ctx.fill();
-    ctx.strokeStyle = on ? meta.color : Palette.grid;
-    ctx.lineWidth = on ? 1.8 : 1;
-    roundRect(ctx, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 7);
-    ctx.stroke();
 
+    panel(ctx, r.x, r.y, r.w, r.h, {
+      fill: on ? 'rgba(255,255,255,0.07)' : 'rgba(17,22,36,0.9)',
+      border: on ? meta.color : Palette.grid,
+      radius: 8,
+      glowColor: on ? meta.color : null,
+      glowBlur: 18,
+    });
+    if (on) {
+      ctx.save();
+      ctx.strokeStyle = meta.color;
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = 1.6;
+      roundRect(ctx, r.x + 0.9, r.y + 0.9, r.w - 1.8, r.h - 1.8, 8);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // hotkey badge — filled in the tool colour when live, muted tint when not
+    const bs = Math.min(r.h - 10, m.compact ? 19 : 23);
+    const bx = r.x + (m.compact ? 7 : 9);
+    const by = r.y + (r.h - bs) / 2;
+    ctx.save();
+    ctx.globalAlpha = on ? 1 : 0.26;
     ctx.fillStyle = meta.color;
-    ctx.globalAlpha = on ? 1 : 0.6;
-    roundRect(ctx, r.x + 8, r.y + r.h / 2 - 5, 10, 10, 3);
+    roundRect(ctx, bx, by, bs, bs, 5);
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.restore();
+    text(ctx, meta.key, bx + bs / 2, by + bs / 2 + 0.5, {
+      size: m.compact ? Type.label : Type.small,
+      color: on ? Palette.bg : Palette.ink,
+      align: 'center', baseline: 'middle', weight: 700, alpha: on ? 1 : 0.8,
+    });
 
-    const compact = r.w < 104;
-    text(ctx, meta.key + ' ' + (compact ? meta.label.slice(0, 3) : meta.label),
-      r.x + 24, r.y + (compact ? r.h / 2 : 7),
-      { size: 10.5, color: on ? Palette.ink : Palette.dim, weight: 700, baseline: compact ? 'middle' : 'top' });
-    if (!compact) {
-      text(ctx, meta.blurb, r.x + 24, r.y + 19, { size: 9, color: Palette.dim, alpha: on ? 0.9 : 0.55 });
+    const tx = bx + bs + (m.compact ? 6 : 9);
+    const room = r.w - (tx - r.x) - 8;
+    ctx.save();
+    ctx.font = `700 ${labelSize}px ${MONO}`;
+    let lab = meta.label;
+    if (ctx.measureText(lab).width > room) lab = lab.slice(0, 3);
+    const showBlurb = !m.compact && r.h >= 38 && ctx.measureText(meta.blurb).width <= room;
+    ctx.restore();
+
+    text(ctx, lab, tx, showBlurb ? r.y + 10 : r.y + r.h / 2, {
+      size: labelSize, color: on ? Palette.ink : Palette.dim, weight: 700,
+      baseline: showBlurb ? 'top' : 'middle',
+    });
+    if (showBlurb) {
+      text(ctx, meta.blurb, tx, r.y + 25, {
+        size: Type.micro, color: on ? Palette.ink : Palette.dim, alpha: on ? 0.8 : 0.55,
+      });
     }
   }
 }
 
-function centreCard(ctx, g, lines) {
-  const w = Math.min(g.w - 40, 520);
-  let h = 26;
-  for (const l of lines) h += l.gap || 24;
-  const x = (g.w - w) / 2, y = (g.h - h) / 2;
-  ctx.fillStyle = 'rgba(9,11,18,0.9)';
-  roundRect(ctx, x, y, w, h, 12);
-  ctx.fill();
-  ctx.strokeStyle = Palette.grid;
-  ctx.lineWidth = 1;
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 12);
-  ctx.stroke();
-  let cy = y + 16;
-  for (const l of lines) {
-    text(ctx, l.t, g.w / 2, cy, { size: l.size || 12, color: l.color || Palette.dim, align: 'center', weight: l.weight || 500, alpha: l.alpha ?? 1 });
-    cy += l.gap || 24;
+/** One status slot above the dock, priority-ordered so nothing ever overlaps. */
+function statusLine(s, g) {
+  if (s.sim.status === 'dead') return { t: 'BALL LOST — RESETTING', color: Palette.hot, alpha: 1 };
+  if (s.msgT > 0) return { t: s.msg, color: Palette.warm, alpha: clamp(s.msgT / 0.5, 0, 1) };
+  if (s.sim.status === 'play' && !s.sim.released && s.sim.bodies.length > 0) {
+    const p = 0.45 + 0.55 * Math.sin(g.t * 3.4);
+    return { t: 'SPACE  →  DROP THE BALL', color: Palette.accent, alpha: 0.4 + p * 0.6 };
   }
+  return null;
 }
 
 // ---------------------------------------------------------------- render
@@ -590,26 +831,49 @@ function render(s, ctx, g) {
   const t = g.t;
   const L = LEVELS[s.levelIndex];
   const v = getView(g);
+  const m = metrics(g);
+  // One prepareStroke per frame, shared by the on-paper preview and the HUD ghost bar.
+  const prep = (s.drawing && s.raw.length > 1 && (s.tool === TOOL_INK || s.tool === TOOL_STATIC))
+    ? prepareStroke(s.raw) : null;
 
+  ctx.save();
   ctx.fillStyle = Palette.bg;
   ctx.fillRect(0, 0, g.w, g.h);
+  ctx.restore();
 
+  // ---------------------------------------------------------------- world
   ctx.save();
   ctx.translate(v.ox, v.oy);
   ctx.scale(v.scale, v.scale);
+  const hair = 1 / v.scale;             // hairlines that stay 1 CSS px at any zoom
 
-  // paper
+  ctx.save();
   ctx.fillStyle = Palette.bg2;
   roundRect(ctx, 0, 0, WORLD_W, WORLD_H, 10);
   ctx.fill();
-  ctx.save();
   ctx.clip();
+
+  // paper shading — lit from above so the sheet reads as a surface, not a rectangle
+  const sheet = ctx.createLinearGradient(0, 0, 0, WORLD_H);
+  sheet.addColorStop(0, 'rgba(255,255,255,0.035)');
+  sheet.addColorStop(0.55, 'rgba(255,255,255,0)');
+  sheet.addColorStop(1, 'rgba(0,0,0,0.2)');
+  ctx.fillStyle = sheet;
+  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+
+  // graph paper: minor rule every 40, major every 200
   ctx.strokeStyle = Palette.grid;
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = hair;
   ctx.beginPath();
-  for (let x = 40; x < WORLD_W; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_H); }
-  for (let y = 40; y < WORLD_H; y += 40) { ctx.moveTo(0, y); ctx.lineTo(WORLD_W, y); }
+  for (let x = 40; x < WORLD_W; x += 40) { if (x % 200 === 0) continue; ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_H); }
+  for (let y = 40; y < WORLD_H; y += 40) { if (y % 200 === 0) continue; ctx.moveTo(0, y); ctx.lineTo(WORLD_W, y); }
+  ctx.stroke();
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = hair * 1.4;
+  ctx.beginPath();
+  for (let x = 200; x < WORLD_W; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, WORLD_H); }
+  for (let y = 200; y < WORLD_H; y += 200) { ctx.moveTo(0, y); ctx.lineTo(WORLD_W, y); }
   ctx.stroke();
   ctx.globalAlpha = 1;
 
@@ -618,86 +882,94 @@ function render(s, ctx, g) {
   drawGoal(ctx, L.goal, t, s.sim.goalGlow, s.sim.status === 'won');
   drawBodies(ctx, s.sim, t);
   drawBall(ctx, s.sim, t);
-  drawPreview(ctx, s, g);
+  drawPreview(ctx, s, prep);
   FX.draw(ctx);
+  ctx.restore();                         // end paper clip
+
+  ctx.save();
+  ctx.strokeStyle = Palette.grid;
+  ctx.lineWidth = hair * 1.6;
+  roundRect(ctx, 0, 0, WORLD_W, WORLD_H, 10);
+  ctx.stroke();
   ctx.restore();
 
-  ctx.restore();
+  ctx.restore();                         // end world transform
 
-  // ---- HUD
-  text(ctx, `${String(s.levelIndex + 1).padStart(2, '0')}/${String(LEVELS.length).padStart(2, '0')}  ${L.name.toUpperCase()}`,
-    12, 12, { size: 12, color: Palette.ink, weight: 700 });
-  drawInkMeter(s, ctx, g);
-  drawPalette(s, ctx, g);
-
-  if (s.hintT > 0 && s.phase === 'play' && s.sim.status === 'play') {
-    text(ctx, L.hint, g.w / 2, TOP_PAD + 4, {
-      size: 11, color: Palette.dim, align: 'center', alpha: clamp(s.hintT / 0.8, 0, 1),
-    });
-  }
-
-  if (s.msgT > 0) {
-    text(ctx, s.msg, g.w / 2, g.h - BOT_PAD - 14, {
-      size: 11, color: Palette.warm, align: 'center', weight: 700, alpha: clamp(s.msgT / 0.5, 0, 1),
-    });
-  }
-
-  if (s.phase === 'play' && s.sim.status === 'play' && !s.sim.released && s.sim.bodies.length > 0) {
-    const p = 0.45 + 0.55 * Math.sin(t * 3.4);
-    text(ctx, 'SPACE  →  DROP THE BALL', g.w / 2, g.h - BOT_PAD - 14, {
-      size: 11.5, color: Palette.accent, align: 'center', weight: 700, alpha: 0.35 + p * 0.65,
-    });
-  }
-
-  if (s.sim.status === 'dead') {
-    text(ctx, 'BALL LOST — RESETTING', g.w / 2, g.h - BOT_PAD - 14, {
-      size: 11.5, color: Palette.hot, align: 'center', weight: 700,
-    });
-  }
+  // Focus the eye on the sheet. Everything above this is playfield; everything below
+  // is chrome, and chrome stays crisp.
+  vignette(ctx, g, 0.45);
 
   if (s.flash > 0) {
-    ctx.globalAlpha = s.flash * 0.18;
+    ctx.save();
+    ctx.globalAlpha = clamp(s.flash, 0, 1) * 0.18;
     ctx.fillStyle = Palette.hot;
     ctx.fillRect(0, 0, g.w, g.h);
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
+  // ---------------------------------------------------------------- chrome
+  drawHud(s, ctx, g, m, prep);
+  drawDock(s, ctx, g, m);
+
+  if (s.hintT > 0 && s.phase === 'play' && s.sim.status === 'play') {
+    pill(ctx, g, m.hudH + (m.compact ? 17 : 21), L.hint, {
+      fg: Palette.ink, border: Palette.grid,
+      alpha: clamp(s.hintT / 0.8, 0, 1) * 0.95,
+      size: m.compact ? Type.label : Type.small,
+    });
+  }
+
+  if (s.phase === 'play' && s.sim.status !== 'won') {
+    const info = statusLine(s, g);
+    if (info) {
+      pill(ctx, g, g.h - m.dockH - (m.compact ? 18 : 23), info.t, {
+        fg: info.color, border: info.color, alpha: info.alpha,
+        size: m.compact ? Type.label : Type.small,
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------- overlays
   if (s.sim.status === 'won') {
     const ink = Math.round(s.sim.inkUsed);
     const underPar = ink <= L.par;
     const last = s.levelIndex === LEVELS.length - 1;
-    centreCard(ctx, g, [
-      { t: last ? 'THE WHOLE SKETCHBOOK' : 'SOLVED', size: 24, color: Palette.accent, weight: 700, gap: 34 },
-      { t: `${ink} ink   ·   par ${L.par}${underPar ? '   ·   UNDER PAR' : ''}`, size: 13, color: underPar ? Palette.accent : Palette.ink, gap: 24 },
-      { t: s.newBest ? 'NEW PERSONAL BEST' : `your best here: ${s.best === null ? ink : s.best}`, size: 11, color: s.newBest ? Palette.warm : Palette.dim, gap: 28 },
-      { t: last ? 'SPACE → start over' : 'SPACE → next level', size: 12, color: Palette.dim, gap: 20 },
-    ]);
+    titleCard(ctx, g, {
+      title: last ? 'SKETCHBOOK FULL' : 'SOLVED',
+      tagline: `${ink} INK   ·   PAR ${L.par}`,
+      lines: [
+        `${L.name}  ·  level ${s.levelIndex + 1} of ${LEVELS.length}`,
+        s.best === null ? '' : `your best here: ${s.best}`,
+      ].filter(Boolean),
+      prompt: last ? 'SPACE  →  START OVER' : 'SPACE  →  NEXT LEVEL',
+      t,
+      accent: underPar ? Palette.accent : Palette.warm,
+    });
+    if (s.newBest || underPar) {
+      pill(ctx, g, g.h / 2 - 128, s.newBest ? 'NEW PERSONAL BEST' : 'UNDER PAR', {
+        fg: Palette.warm, border: Palette.warm, size: Type.small,
+      });
+    }
   }
 
   if (s.phase === 'intro') {
-    ctx.fillStyle = 'rgba(7,8,13,0.9)';
-    ctx.fillRect(0, 0, g.w, g.h);
-    const cy = g.h / 2;
-    text(ctx, 'SCRIBBLE', g.w / 2, cy - 96, { size: 34, color: Palette.accent, align: 'center', weight: 700 });
-    text(ctx, 'Draw anything. It becomes real physics.', g.w / 2, cy - 54, { size: 14, color: Palette.ink, align: 'center' });
-    text(ctx, 'Ramps, bridges, see-saws, pendulums, catapults — invent whatever gets', g.w / 2, cy - 30, { size: 11.5, color: Palette.dim, align: 'center' });
-    text(ctx, 'the ball into the ring. Ink is limited. Every solution is yours.', g.w / 2, cy - 12, { size: 11.5, color: Palette.dim, align: 'center' });
-
-    const rows = [
-      ['DRAG', 'draw a stroke'],
-      ['1 / 2', 'falling ink  /  world-pinned ink'],
-      ['3 / 4', 'pin a point (pendulums!)  /  erase + refund'],
-      ['SPACE', 'drop the ball'],
-      ['R / Z / C', 'reset ball  ·  undo  ·  clear all'],
-    ];
-    let ry = cy + 14;
-    for (const [k, d] of rows) {
-      text(ctx, k, g.w / 2 - 14, ry, { size: 11, color: Palette.warm, align: 'right', weight: 700 });
-      text(ctx, d, g.w / 2 + 14, ry, { size: 11, color: Palette.dim, align: 'left' });
-      ry += 18;
-    }
-    const p = 0.5 + 0.5 * Math.sin(g.t * 3);
-    text(ctx, 'DRAW SOMETHING', g.w / 2, ry + 18, { size: 14, color: Palette.accent, align: 'center', weight: 700, alpha: 0.4 + p * 0.6 });
+    titleCard(ctx, g, {
+      title: 'SCRIBBLE',
+      tagline: 'Draw anything. It becomes real physics.',
+      lines: [
+        'Ramps, bridges, see-saws, catapults — get the ball home.',
+        '',
+        'DRAG  ·  draw a stroke',
+        '1 / 2  ·  falling ink  ·  world-pinned ink',
+        '3 / 4  ·  pin a point  ·  erase + refund',
+        'SPACE  ·  drop the ball',
+        'R / Z / C  ·  reset  ·  undo  ·  clear',
+        '[ / ]  ·  previous / next level',
+      ],
+      prompt: 'DRAW SOMETHING',
+      t,
+      accent: Palette.accent,
+    });
   }
 }
 
@@ -871,6 +1143,7 @@ registerSelftest('scribble', (check, log) => {
   const wasPaused = game.paused;
   const savedMaxLevel = Store.get('maxLevel', 0);
   const savedBest0 = Store.get('best:0', null);
+  const savedSolved = Store.get('solved', 0);
   game.paused = true;
   game.restart();
   loadLevel(game.state, 0);
@@ -915,6 +1188,7 @@ registerSelftest('scribble', (check, log) => {
   game.input.clear();
   Store.set('maxLevel', savedMaxLevel);
   Store.set('best:0', savedBest0);
+  Store.set('solved', savedSolved);
   game.restart();
   game.paused = wasPaused;
   log(`levels=${LEVELS.length} verified=${solved} solutionInk=[${inks}]`);

@@ -537,6 +537,19 @@ function fmtTime(t) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+/**
+ * Width of `str` in the font it will actually be drawn in.
+ * text() save/restores the font, so a bare ctx.measureText() here would silently
+ * measure the canvas default (10px sans-serif) and lay the header out from it.
+ */
+function measureIn(ctx, str, size, weight = 600) {
+  ctx.save();
+  ctx.font = `${weight} ${size}px ${MONO}`;
+  const w = ctx.measureText(String(str)).width;
+  ctx.restore();
+  return w;
+}
+
 function panel(ctx, r, alpha = 1) {
   ctx.globalAlpha = alpha;
   ctx.fillStyle = Palette.bg2;
@@ -612,20 +625,39 @@ function drawHeader(s, ctx, g, L) {
   ctx.beginPath(); ctx.moveTo(0, L.headH - 0.5); ctx.lineTo(g.w, L.headH - 0.5); ctx.stroke();
 
   const fs = Math.max(9, 10.5 * S);
+  const gap = Math.max(7, 10 * S);
+  const tight = Math.max(4, 5 * S);
+  const labelFs = Math.max(8.5, fs * 0.86);
+
+  // left cluster — every advance measured in the font it is drawn in
   let x = L.pad;
   text(ctx, SHIP.name, x, y, { size: fs, color: Palette.ink, baseline: 'middle', weight: 700 });
-  x += ctx.measureText(SHIP.name).width + 10 * S;
-  const seedTxt = 'SEED ' + s.seedStr;
-  text(ctx, seedTxt, x, y, { size: fs, color: Palette.accent, baseline: 'middle', weight: 600 });
+  x += measureIn(ctx, SHIP.name, fs, 700) + gap;
+  text(ctx, 'SEED', x, y, { size: labelFs, color: Palette.dim, baseline: 'middle', weight: 600 });
+  x += measureIn(ctx, 'SEED', labelFs, 600) + tight;
+  text(ctx, s.seedStr, x, y, { size: fs, color: Palette.accent, baseline: 'middle', weight: 700 });
   if (!L.narrow) {
-    x += 9 * S + fs * 0.62 * seedTxt.length;
+    x += measureIn(ctx, s.seedStr, fs, 700) + gap;
     text(ctx, TIERS[s.tierIndex].label, x, y, { size: fs, color: Palette.dim, baseline: 'middle' });
   }
 
-  const stat = L.narrow
-    ? `${s.lockedCount}/${s.cells}  ${s.confirms}  ${fmtTime(s.time)}`
-    : `PROVEN ${s.lockedCount}/${s.cells}   CONFIRMS ${s.confirms}   ${fmtTime(s.time)}`;
-  text(ctx, stat, g.w - L.pad, y, { size: fs, color: Palette.ink, align: 'right', baseline: 'middle', weight: 600 });
+  // right cluster — dim label, bright value, laid out right to left.
+  // Same tokens and roughly the same width as before; the hierarchy is what changes.
+  const segs = L.narrow
+    ? [['', `${s.lockedCount}/${s.cells}`], ['', String(s.confirms)], ['', fmtTime(s.time)]]
+    : [['PROVEN', `${s.lockedCount}/${s.cells}`], ['CONFIRMS', String(s.confirms)], ['', fmtTime(s.time)]];
+  let rx = g.w - L.pad;
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const [label, value] = segs[i];
+    text(ctx, value, rx, y, { size: fs, color: Palette.ink, align: 'right', baseline: 'middle', weight: 700 });
+    rx -= measureIn(ctx, value, fs, 700);
+    if (label) {
+      rx -= tight;
+      text(ctx, label, rx, y, { size: labelFs, color: Palette.dim, align: 'right', baseline: 'middle', weight: 600 });
+      rx -= measureIn(ctx, label, labelFs, 600);
+    }
+    rx -= gap;
+  }
 }
 
 function drawRoster(s, ctx, g, L) {
@@ -1061,6 +1093,14 @@ registerSelftest('the-nine', (check, log) => {
     `${minChecked} puzzles fully re-checked · redundant: ${redundant.slice(0, 4).join(',') || 'none'}`);
 
   // --- live game from here on
+  // This section deliberately wins a real puzzle through the real confirm path (check
+  // 7 below), and doConfirm() on a real win writes 'solved', 'bestTime:<tier>' and
+  // 'bestConfirms:<tier>' to Store — so without isolating it, running this self-test
+  // once would overwrite whatever the player had actually earned. Tier 1 is the only
+  // tier this section touches.
+  const savedSolved = Store.get('solved', 0);
+  const savedBestTime1 = Store.get('bestTime:1', null);
+  const savedBestConfirms1 = Store.get('bestConfirms:1', null);
   game.puzzleSeed = 'TESTAA';
   game.restart();
   newPuzzle(game.state, 'TESTAA', 1);
@@ -1131,6 +1171,9 @@ registerSelftest('the-nine', (check, log) => {
   check('the win condition is reachable via the real confirm path',
     s.phase === 'solved' && s.lockedCount === s.cells && hitsWin === s.cells - 3,
     `phase=${s.phase} locked=${s.lockedCount}/${s.cells} lastBatch=${hitsWin}`);
+  Store.set('solved', savedSolved);
+  Store.set('bestTime:1', savedBestTime1);
+  Store.set('bestConfirms:1', savedBestConfirms1);
 
   // 9. long chaotic run: no throw, nothing goes non-finite
   game.puzzleSeed = 'TESTBB';
