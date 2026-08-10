@@ -28,8 +28,10 @@ export const GHOST_CAP = 6;
 
 // ---------------------------------------------------------------- level parsing
 
-function plateId(ch) { return (ch >= '1' && ch <= '4') ? ch.charCodeAt(0) - 48 : 0; }
-function doorId(ch) { return (ch >= 'a' && ch <= 'd') ? ch.charCodeAt(0) - 96 : 0; }
+// Plate/door ids run 1-6 / a-f so a level can require up to GHOST_CAP (6) ghosts
+// simultaneously (one plate+door pair per required ghost).
+function plateId(ch) { return (ch >= '1' && ch <= '6') ? ch.charCodeAt(0) - 48 : 0; }
+function doorId(ch) { return (ch >= 'a' && ch <= 'f') ? ch.charCodeAt(0) - 96 : 0; }
 function isOneway(ch) { return ch === '_' || plateId(ch) > 0; }
 
 export function parseLevel(def) {
@@ -288,7 +290,7 @@ export function stepSim(sim, mask, dt) {
 
   // 2. door state from plates (ghosts + player's previous position)
   const doorOpen = {};
-  for (let id = 1; id <= 4; id++) doorOpen[id] = plateActive(sim, id);
+  for (let id = 1; id <= 6; id++) doorOpen[id] = plateActive(sim, id);
 
   // 3. advance player, colliding with tiles + closed doors + ghost bodies
   const rects = sim.ghosts.filter((g) => g.visible).map((g) => ({ x: g.x, y: g.y }));

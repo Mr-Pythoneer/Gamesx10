@@ -42,20 +42,25 @@ const SOLID = {
 
 export const HOLE_COUNT = HOLES.length;
 
-/** Preview length by hole: full flight early, half by the middle, a stub on the back six. */
+/** Preview length by hole: full flight early, half by the middle, a stub on the back nine-tenths. */
 export function previewSteps(holeIndex) {
   // Was 640 on holes 1-6 — the entire flight to rest, which showed the outcome
   // before the player committed and defeated the "so close" risk/reward the whole
   // game is built on. This only shortens the rendered preview; solve()/replay() run
   // their own full simulation independently, so no solved hole can become unsolvable.
-  if (holeIndex < 6) return 200;   // holes 1-6: a few seconds, enough to learn the pull
-  if (holeIndex < 12) return 120;  // holes 7-12: about two seconds of future
-  return 46;                       // holes 13-18: a stub. Now you are flying it.
+  //
+  // Proportions preserved from the original 18-tier curve (first ~8% generous, next
+  // ~24% partial, remaining ~68% stub-only) and scaled onto the full HOLE_COUNT so the
+  // escalating-difficulty feel holds whether the course has 18 holes or 75.
+  const n = HOLE_COUNT;
+  if (holeIndex < Math.round(n * 0.08)) return 200;  // a few seconds, enough to learn the pull
+  if (holeIndex < Math.round(n * 0.32)) return 120;  // about two seconds of future
+  return 46;                                         // a stub. Now you are flying it.
 }
 
 // ---------------------------------------------------------------- construction
 
-function makeBody(def, index) {
+export function makeBody(def, index) {
   const type = def.type || 'planet';
   const r = def.r || 40;
   const gm = def.gm !== undefined ? def.gm : DENSITY[type] * r * r;
@@ -83,9 +88,13 @@ function makeBody(def, index) {
   return b;
 }
 
-/** Fresh simulation for a hole, probe parked on the tee, nothing launched yet. */
-export function makeSim(holeIndex) {
-  const hole = HOLES[holeIndex];
+/**
+ * Build a fresh sim straight from a hole-shaped def ({ bounds, start, goal, bodies }),
+ * without requiring it to live in the HOLES array. Used by makeSim() below and by the
+ * dev generator (tools-generate.mjs) to solve() candidate holes before they are ever
+ * written to holes.js.
+ */
+export function buildSim(hole, holeIndex = -1) {
   const bodies = hole.bodies.map(makeBody);
   return {
     holeIndex,
@@ -104,6 +113,11 @@ export function makeSim(holeIndex) {
     events: [],
     frames: 0,
   };
+}
+
+/** Fresh simulation for a hole, probe parked on the tee, nothing launched yet. */
+export function makeSim(holeIndex) {
+  return buildSim(HOLES[holeIndex], holeIndex);
 }
 
 /** Fire the probe from the tee. angle in radians, power in units/sec. */
@@ -315,9 +329,14 @@ export function predict(holeIndex, angle, power, steps, dt = 1 / 60) {
   return { points: pts, status: sim.status, truncated: sim.status === 'flying', time: sim.flightTime };
 }
 
-/** Run a launch to completion headlessly. Used by the solver and the self-test. */
-export function flightResult(holeIndex, angle, power, { dt = 1 / 60, maxFrames = 1000 } = {}) {
-  const sim = makeSim(holeIndex);
+/**
+ * Run a launch to completion headlessly. Used by the solver and the self-test.
+ * `holeOrDef` is either an index into HOLES, or a standalone hole-shaped def
+ * (bounds/start/goal/bodies) — the latter lets the dev generator solve candidate
+ * holes that are not (yet, or ever) written into holes.js.
+ */
+export function flightResult(holeOrDef, angle, power, { dt = 1 / 60, maxFrames = 1000 } = {}) {
+  const sim = typeof holeOrDef === 'number' ? makeSim(holeOrDef) : buildSim(holeOrDef);
   launch(sim, angle, power);
   let f = 0;
   while (sim.status === 'flying' && f < maxFrames) { stepSim(sim, dt); f++; }
@@ -341,7 +360,8 @@ export function replaySolution(holeIndex, solution, opts) {
  * Run it from node via tools-solve.mjs, or from the browser console:
  *   __orbital.solve(0)
  */
-export function solve(holeIndex, { angles = 180, powers = 30, minFrac = 0.18, dt = 1 / 60, maxFrames = 1000, refine = true } = {}) {
+export function solve(holeOrDef, { angles = 180, powers = 30, minFrac = 0.18, dt = 1 / 60, maxFrames = 1000, refine = true } = {}) {
+  const holeIndex = typeof holeOrDef === 'number' ? holeOrDef : -1;
   const hit = [];
   const hitList = [];
   for (let i = 0; i < angles; i++) hit.push(new Uint8Array(powers));
@@ -350,7 +370,7 @@ export function solve(holeIndex, { angles = 180, powers = 30, minFrac = 0.18, dt
     const a = (i / angles) * TAU;
     for (let j = 0; j < powers; j++) {
       const p = MAX_POWER * (minFrac + (1 - minFrac) * ((j + 1) / powers));
-      const r = flightResult(holeIndex, a, p, { dt, maxFrames });
+      const r = flightResult(holeOrDef, a, p, { dt, maxFrames });
       if (r.status === 'sunk') {
         hit[i][j] = 1;
         hitList.push({ i, j, a, p, frames: r.frames });
@@ -390,11 +410,11 @@ export function solve(holeIndex, { angles = 180, powers = 30, minFrac = 0.18, dt
         const a = best.a + di * stepA * 0.5;
         const p = best.p + dj * stepP * 0.5;
         if (p < MAX_POWER * minFrac || p > MAX_POWER) continue;
-        if (flightResult(holeIndex, a, p, { dt, maxFrames }).status !== 'sunk') continue;
+        if (flightResult(holeOrDef, a, p, { dt, maxFrames }).status !== 'sunk') continue;
         // how much slack around this exact shot?
         let s = 0;
         for (const [da, dp] of [[0.006, 0], [-0.006, 0], [0, 4], [0, -4], [0.012, 0], [-0.012, 0], [0, 8], [0, -8]]) {
-          if (flightResult(holeIndex, a + da, p + dp, { dt, maxFrames }).status === 'sunk') s++;
+          if (flightResult(holeOrDef, a + da, p + dp, { dt, maxFrames }).status === 'sunk') s++;
         }
         if (s > bestLocal.score) bestLocal = { a, p, score: s };
       }
@@ -402,7 +422,7 @@ export function solve(holeIndex, { angles = 180, powers = 30, minFrac = 0.18, dt
     if (bestLocal.score >= 0) solution = { a: bestLocal.a, p: bestLocal.p };
   }
 
-  const verify = flightResult(holeIndex, solution.a, solution.p, { dt, maxFrames });
+  const verify = flightResult(holeOrDef, solution.a, solution.p, { dt, maxFrames });
   return {
     ok: verify.status === 'sunk',
     holeIndex,

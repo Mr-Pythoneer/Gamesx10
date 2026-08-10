@@ -199,17 +199,23 @@ const SECTIONS = [
 ];
 
 /**
- * compose(seedString) -> { bpm, key, scale, notes, chart, cues, ... }
+ * compose(seedString, difficulty = 0) -> { bpm, key, scale, notes, chart, cues, ... }
  *
  * `notes` is the note table: a flat, time-sorted array of
  *   { time, dur, freq, kind, velocity, ... }
  * with kind in kick|snare|hat|bass|lead|pad. Everything else is derived from it.
+ *
+ * `difficulty` is a pure, deterministic tuning knob in [0, 1] — 0 is the original
+ * free-play feel, 1 is the hardest the fairness verifier still allows. It nudges
+ * tempo, note density and how tightly the chart packs obstacles. It never touches
+ * Math.random()/Date.now(), so (seed, difficulty) -> byte-identical output, forever.
  */
-export function compose(seedString) {
+export function compose(seedString, difficulty = 0) {
   const seed = String(seedString == null ? '' : seedString).toUpperCase() || 'PULSE';
+  const diff = clamp(Number(difficulty) || 0, 0, 1);
   const rng = new Rng(seed);
 
-  const bpm = 90 + rng.int(71);                 // 90..160
+  const bpm = Math.round(90 + rng.int(71) + diff * 34); // 90..~195 as difficulty climbs
   const spb = 60 / bpm;                          // seconds per beat
   const s16 = spb / 4;                           // seconds per sixteenth
   const barDur = spb * 4;
@@ -255,9 +261,13 @@ export function compose(seedString) {
           push({ time: tt, dur: 0.24, freq: 52, kind: 'kick', velocity: st === 0 ? 1 : 0.85, step: st, bar });
         }
         if (snarePat[st] === '1' && sec.drums > 0.5) {
+          // Difficulty widens which backbeat hits become pit obstacles: more bars
+          // qualify and the step window relaxes from "second half only" downward.
+          const snareBarMod = diff > 0.6 ? 1 : 2;
+          const snareStMin = 8 - Math.round(diff * 4);
           push({
             time: tt, dur: 0.18, freq: 196, kind: 'snare', velocity: 0.9, step: st, bar,
-            strong: si >= 1 && bar % 2 === 1 && st >= 8,
+            strong: si >= 1 && bar % snareBarMod === (snareBarMod === 1 ? 0 : 1) && st >= snareStMin,
           });
         }
         if (hatPat[st] === '1' && rng.next() < sec.drums) {
@@ -311,7 +321,9 @@ export function compose(seedString) {
           else if (variation === 3 && !useFill) off += (i % 2 ? 2 : 0);
           const midi = degToMidi(scale, root + 36 + sec.lift, chordDeg + off);
           const next = i + 1 < onsets.length ? onsets[i + 1] : 16;
-          const strong = st % 4 === 0;
+          // Difficulty coarsens the strong-beat grid from every quarter note down to
+          // every eighth, doubling spike candidates on the hardest stages.
+          const strong = diff > 0.6 ? st % 2 === 0 : st % 4 === 0;
           push({
             time: t0 + st * s16 + swingOf(st),
             dur: Math.min(4, next - st) * s16 * 0.92,
@@ -331,6 +343,7 @@ export function compose(seedString) {
 
   const song = {
     seed,
+    difficulty: diff,
     bpm, spb, s16, barDur, bars, duration, swing,
     key: NOTE_NAMES[rootPc],
     keyMidi: root,
@@ -340,7 +353,11 @@ export function compose(seedString) {
     notes,
   };
 
-  song.chart = buildChart(song);
+  // Difficulty also tightens the packer itself: less breathing room between
+  // obstacles means more of the same candidates survive fits() below. The packer
+  // (fits) and the verifier (verifyChart) share ACTIONS/MARGIN as the single source
+  // of truth for what's reachable, so any packing this produces is still provably fair.
+  song.chart = buildChart(song, { marginScale: 1 - 0.4 * diff, rampScale: 1 - 0.7 * diff });
   song.cues = buildCues(song.chart);
   return song;
 }
@@ -348,9 +365,9 @@ export function compose(seedString) {
 // ---------------------------------------------------------------- chart derivation
 
 /** Extra breathing room early in the song — the difficulty ramp. */
-function rampGap(t, duration) {
+function rampGap(t, duration, scale = 1) {
   const p = clamp(t / Math.max(1, duration), 0, 1);
-  return 0.55 * (1 - p) * (1 - p);
+  return scale * 0.55 * (1 - p) * (1 - p);
 }
 
 function makeEntry(type, cue) {
@@ -369,13 +386,14 @@ function makeEntry(type, cue) {
 }
 
 /** Would placing `e` keep every neighbour reachable by an optimal player? */
-function fits(list, e, duration) {
+function fits(list, e, duration, marginScale, rampScale) {
   let i = 0;
   while (i < list.length && list[i].cue < e.cue) i++;
   const prev = list[i - 1];
   const next = list[i];
-  const gapBefore = MARGIN + rampGap(e.cue, duration);
-  if (prev && e.cue < prev.cue + prev.busy + MARGIN + rampGap(prev.cue, duration)) return -1;
+  const margin = MARGIN * marginScale;
+  const gapBefore = margin + rampGap(e.cue, duration, rampScale);
+  if (prev && e.cue < prev.cue + prev.busy + margin + rampGap(prev.cue, duration, rampScale)) return -1;
   if (next && next.cue < e.cue + e.busy + gapBefore) return -1;
   return i;
 }
@@ -388,8 +406,10 @@ function fits(list, e, duration) {
  * Candidates that an optimal player could not physically reach are dropped, so the
  * result is completable by construction — and verifyChart() proves it independently.
  */
-export function buildChart(song) {
+export function buildChart(song, opts = {}) {
   const { notes, duration, barDur } = song;
+  const marginScale = opts.marginScale === undefined ? 1 : opts.marginScale;
+  const rampScale = opts.rampScale === undefined ? 1 : opts.rampScale;
   const leadIn = Math.max(barDur * 2, 3.2);
 
   const ceilings = [];
@@ -406,13 +426,13 @@ export function buildChart(song) {
   for (const c of ceilings) {
     if (c.cue + ACTIONS.ceiling.busy > duration - 0.6) continue;
     const e = makeEntry(c.type, c.cue);
-    const i = fits(out, e, duration);
+    const i = fits(out, e, duration, marginScale, rampScale);
     if (i >= 0) out.splice(i, 0, e);
   }
   for (const c of others) {
     if (c.cue + ACTIONS[c.type].busy > duration - 0.6) continue;
     const e = makeEntry(c.type, c.cue);
-    const i = fits(out, e, duration);
+    const i = fits(out, e, duration, marginScale, rampScale);
     if (i >= 0) out.splice(i, 0, e);
   }
 
@@ -475,8 +495,8 @@ export function verifyChart(chart, opts = {}) {
 }
 
 /** Convenience: compose + verify in one call. */
-export function verifySeed(seedString) {
-  const song = compose(seedString);
+export function verifySeed(seedString, difficulty = 0) {
+  const song = compose(seedString, difficulty);
   const v = verifyChart(song.chart);
   return { song, ...v };
 }

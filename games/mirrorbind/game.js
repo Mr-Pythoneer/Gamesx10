@@ -945,7 +945,7 @@ function render(s, ctx, g) {
 
   if (s.phase === 'complete') {
     titleCard(ctx, g, {
-      title: T('ALL TEN BOUND', '十关全部归位'),
+      title: T(`ALL ${LEVELS.length} BOUND`, `${LEVELS.length}关全部归位`),
       tagline: T(`Finished with ${s.runDeaths} deaths.`, `以 ${s.runDeaths} 次死亡完成。`),
       lines: [T('Every mirror walked itself home.', '每一面镜子都自己走回了家。')],
       prompt: T('ENTER TO RUN IT BACK', '按 ENTER 再来一轮'),

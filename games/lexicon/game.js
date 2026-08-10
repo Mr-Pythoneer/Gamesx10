@@ -24,6 +24,56 @@ import { isWord, WORD_COUNT } from './words.js';
 const VOWELS = 'aeiou';
 const RARE = 'jqxz';
 
+// ---------------------------------------------------------------- campaign
+
+const STAGE_COUNT = 50;
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/**
+ * 50-stage Campaign. Each stage is "reach `target` score before the pile
+ * overflows." Difficulty ramps via four independent, clamped levers:
+ *   - target      score needed to clear (steady climb, mild acceleration)
+ *   - spawnScale  lower = tiles fall faster/more often (sim.js's spawnInterval)
+ *   - vowelFloor  the pile-composition floor pickLetter() enforces — lowering it
+ *                 allows leaner-vowel piles, never below 0.20 (sim.js clamps this
+ *                 too; the floor is what keeps every stage solvable)
+ *   - rareCap     how many J/Q/X/Z can sit in the pile before pickLetter() backs
+ *                 off — raised only in the back third of the campaign
+ *   - dangerY     raises the lose-line in the last 10 stages, shrinking the
+ *                 usable jar height instead of only pushing speed/skew
+ * The exact formula is mirrored (and load-bearing-verified against the real sim
+ * + real dictionary) by the throwaway script described in this game's PR notes.
+ */
+export const STAGES = (() => {
+  const out = [];
+  for (let i = 0; i < STAGE_COUNT; i++) {
+    const t = i / (STAGE_COUNT - 1);
+    out.push({
+      index: i,
+      name: 'Stage ' + (i + 1),
+      nameZh: '关卡 ' + (i + 1),
+      target: Math.round(150 + 70 * i + Math.floor(i / 5) * 40),
+      spawnScale: lerp(1.35, 0.45, t),
+      vowelFloor: lerp(0.30, 0.20, t),
+      vowelCeil: 0.55,
+      rareCap: i < 30 ? 2 : 3,
+      dangerY: i < 40 ? DANGER_Y : Math.round(lerp(DANGER_Y, DANGER_Y + 40, (i - 40) / 9)),
+    });
+  }
+  return out;
+})();
+
+function makeStageSim(seed, stage) {
+  return makeSim(seed, {
+    spawnScale: stage.spawnScale,
+    vowelFloor: stage.vowelFloor,
+    vowelCeil: stage.vowelCeil,
+    rareCap: stage.rareCap,
+    dangerY: stage.dangerY,
+    target: stage.target,
+  });
+}
+
 // ---------------------------------------------------------------- view
 
 /**
@@ -77,9 +127,14 @@ const toScreenY = (v, wy) => v.oy + wy * v.scale;
 
 // ---------------------------------------------------------------- game state
 
+const UNLOCK_KEY = 'campaignUnlocked';
+
 function init(g) {
   return {
-    phase: 'intro',                 // intro | play | over
+    phase: 'intro',                 // intro | select | play | cleared | over
+    mode: 'endless',                // endless | campaign
+    stageIndex: 0,
+    unlocked: clamp(Store.get(UNLOCK_KEY, 0), 0, STAGES.length - 1),
     sim: makeSim(g.seed),
     view: viewOf(g),
     pops: [],
@@ -100,9 +155,8 @@ function nextSeed(s) {
   return (s.sim.rng.int(1e9) ^ 0x9e3779b9) >>> 0;
 }
 
-function restartRun(s, g) {
-  s.sim = makeSim(nextSeed(s));
-  s.phase = 'play';
+/** Shared reset of the run-scoped visual/audio state; caller sets s.sim + s.phase. */
+function resetRunFx(s, g) {
   s.pops.length = 0;
   s.found.length = 0;
   s.prox = 0;
@@ -111,6 +165,22 @@ function restartRun(s, g) {
   s.goodFlash = 0;
   s.swallow = g.input.pointer.down;
   FX.reset();
+}
+
+function restartRun(s, g) {
+  if (s.mode === 'campaign') { startStage(s, g, s.stageIndex); return; }
+  s.sim = makeSim(nextSeed(s));
+  s.phase = 'play';
+  resetRunFx(s, g);
+}
+
+function startStage(s, g, idx) {
+  idx = clamp(idx, 0, STAGES.length - 1);
+  s.mode = 'campaign';
+  s.stageIndex = idx;
+  s.sim = makeStageSim('stage' + idx + ':' + randomSeedString(), STAGES[idx]);
+  s.phase = 'play';
+  resetRunFx(s, g);
 }
 
 function pop(s, x, y, str, color, size = 20) {
@@ -153,17 +223,29 @@ function handleEvents(s, g) {
       Sound.bad();
       FX.shake(2);
       s.flash = 0.7;
+    } else if (e.type === 'cleared') {
+      Sound.tone({ freq: 520, dur: 0.5, type: 'triangle', gain: 0.18 });
+      Sound.tone({ freq: 780, dur: 0.6, type: 'triangle', gain: 0.14, at: 0.09 });
+      FX.shake(6);
+      s.phase = 'cleared';
+      s.overT = 0;
+      if (s.mode === 'campaign' && s.stageIndex >= s.unlocked && s.stageIndex + 1 < STAGES.length) {
+        s.unlocked = s.stageIndex + 1;
+        Store.set(UNLOCK_KEY, s.unlocked);
+      }
     } else if (e.type === 'over') {
       Sound.tone({ freq: 180, dur: 0.9, type: 'sawtooth', gain: 0.16, slide: -120 });
       Sound.noise({ dur: 0.7, gain: 0.16, freq: 400 });
       FX.shake(16);
       s.phase = 'over';
       s.overT = 0;
-      Store.best('best', s.sim.score);
-      s.best = Math.max(s.best, s.sim.score);
-      if (s.sim.longest.length > s.bestWord.length) {
-        s.bestWord = s.sim.longest;
-        Store.set('longest', s.bestWord);
+      if (s.mode === 'endless') {
+        Store.best('best', s.sim.score);
+        s.best = Math.max(s.best, s.sim.score);
+        if (s.sim.longest.length > s.bestWord.length) {
+          s.bestWord = s.sim.longest;
+          Store.set('longest', s.bestWord);
+        }
       }
     }
   }
@@ -180,7 +262,7 @@ function pileProximity(sim) {
   for (const t of sim.tiles) {
     if ((t.asleep || t.still > 8) && t.y - t.r < top) top = t.y - t.r;
   }
-  return clamp(1 - (top - DANGER_Y) / 240, 0, 1);
+  return clamp(1 - (top - sim.dangerY) / 240, 0, 1);
 }
 
 function update(s, dt, g) {
@@ -203,7 +285,13 @@ function update(s, dt, g) {
     // The opening rain plays behind the title card, so the pile is already alive.
     stepSim(s.sim, { pointer: { x: -9999, y: -9999, down: false }, submit: false }, dt);
     handleEvents(s, g);
+    if (I.justPressed('c')) {
+      s.phase = 'select';
+      Sound.init(); Sound.resume();
+      return;
+    }
     if (I.pointerPressed || I.justPressed('space') || I.justPressed('enter')) {
+      s.mode = 'endless';
       s.phase = 'play';
       s.swallow = I.pointer.down;
       s.sim.t = 0;          // difficulty ramp starts when the player does
@@ -213,9 +301,32 @@ function update(s, dt, g) {
     return;
   }
 
+  if (s.phase === 'select') {
+    if (I.justPressed('esc')) { s.phase = 'intro'; return; }
+    if (I.pointerPressed) {
+      const idx = stageAt(g, I.pointer.x, I.pointer.y);
+      if (idx !== -1 && idx <= s.unlocked) {
+        startStage(s, g, idx);
+        Sound.blip(500);
+      }
+    }
+    return;
+  }
+
+  if (s.phase === 'cleared') {
+    s.overT += dt;
+    if (I.justPressed('esc')) { s.phase = 'select'; return; }
+    if (s.overT > 0.35 && (I.pointerPressed || I.justPressed('space') || I.justPressed('enter'))) {
+      if (s.stageIndex + 1 < STAGES.length) startStage(s, g, s.stageIndex + 1);
+      else s.phase = 'select';
+    }
+    return;
+  }
+
   if (s.phase === 'over') {
     s.overT += dt;
     stepSim(s.sim, { pointer: { x: -9999, y: -9999, down: false }, submit: false }, dt);
+    if (s.mode === 'campaign' && I.justPressed('esc')) { s.phase = 'select'; return; }
     if (I.justPressed('r') || (s.overT > 0.45 && (I.pointerPressed || I.justPressed('space') || I.justPressed('enter')))) {
       restartRun(s, g);
     }
@@ -542,9 +653,15 @@ function drawHud(s, ctx, g, v, dg) {
       color: Palette.accent, valueSize: vs, labelSize: ls,
     });
   }
-  stat(ctx, g.w - pad, y, T('best', '最佳'), Math.max(s.best, sim.score), {
-    color: Palette.dim, align: 'right', valueSize: vs, labelSize: ls,
-  });
+  if (s.mode === 'campaign') {
+    stat(ctx, g.w - pad, y, T('target', '目标'), sim.target, {
+      color: sim.score >= sim.target ? Palette.accent : Palette.dim, align: 'right', valueSize: vs, labelSize: ls,
+    });
+  } else {
+    stat(ctx, g.w - pad, y, T('best', '最佳'), Math.max(s.best, sim.score), {
+      color: Palette.dim, align: 'right', valueSize: vs, labelSize: ls,
+    });
+  }
   if (g.w >= 720) {
     const live = sim.chainT > 0;
     stat(ctx, g.w - pad - gap, y, T('chain', '连击'), '×' + chainMult(sim.chain).toFixed(1), {
@@ -577,8 +694,18 @@ function drawStatusPanel(s, ctx, g, v, dg) {
   const wordV = v.compact ? 15 : 20;
   let yy = y + (v.compact ? 42 : 50);
 
-  stat(ctx, px, yy, T('best', '最佳'), Math.max(s.best, sim.score), { valueSize: bigV, labelSize: lab });
-  yy += bigV + (v.compact ? 22 : 28);
+  if (s.mode === 'campaign') {
+    stat(ctx, px, yy, T('STAGE ' + (s.stageIndex + 1) + '/' + STAGES.length, '第 ' + (s.stageIndex + 1) + '/' + STAGES.length + ' 关'),
+      sim.score + ' / ' + sim.target, { valueSize: bigV, labelSize: lab });
+    yy += bigV + (v.compact ? 8 : 10);
+    meter(ctx, px, yy, iw, 6, sim.target > 0 ? clamp(sim.score / sim.target, 0, 1) : 0, {
+      color: sim.score >= sim.target ? Palette.accent : Palette.warm,
+    });
+    yy += (v.compact ? 22 : 28);
+  } else {
+    stat(ctx, px, yy, T('best', '最佳'), Math.max(s.best, sim.score), { valueSize: bigV, labelSize: lab });
+    yy += bigV + (v.compact ? 22 : 28);
+  }
 
   const lw = (s.bestWord && s.bestWord.length >= sim.longest.length) ? s.bestWord : sim.longest;
   stat(ctx, px, yy, T('longest word', '最长单词'), lw ? lw.toUpperCase() : '—', {
@@ -771,9 +898,83 @@ function drawWordBar(s, ctx, g, v, tt) {
   }
 }
 
+// ---------------------------------------------------------------- stage select
+
+function selectGrid(g) {
+  const cols = g.w < 560 ? 5 : 10;
+  const rows = Math.ceil(STAGES.length / cols);
+  const top = 108;
+  const margin = 28;
+  const gap = 8;
+  const avail = Math.min(g.w - margin * 2, 760);
+  const cell = Math.min((avail - gap * (cols - 1)) / cols, (g.h - top - 70 - gap * (rows - 1)) / rows, 64);
+  const gridW = cell * cols + gap * (cols - 1);
+  const x0 = Math.round((g.w - gridW) / 2);
+  return { cols, rows, cell, gap, x0, y0: top };
+}
+
+/** Returns the stage index under (x, y) in screen space, or -1. */
+function stageAt(g, x, y) {
+  const grid = selectGrid(g);
+  const cx = Math.floor((x - grid.x0) / (grid.cell + grid.gap));
+  const cy = Math.floor((y - grid.y0) / (grid.cell + grid.gap));
+  if (cx < 0 || cy < 0 || cx >= grid.cols || cy >= grid.rows) return -1;
+  const lx = x - grid.x0 - cx * (grid.cell + grid.gap);
+  const ly = y - grid.y0 - cy * (grid.cell + grid.gap);
+  if (lx > grid.cell || ly > grid.cell) return -1;
+  const idx = cy * grid.cols + cx;
+  return idx < STAGES.length ? idx : -1;
+}
+
+function drawSelect(s, ctx, g, tt) {
+  const grad = ctx.createLinearGradient(0, 0, 0, g.h);
+  grad.addColorStop(0, Palette.bg);
+  grad.addColorStop(1, '#04050a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, g.w, g.h);
+
+  text(ctx, T('CAMPAIGN', '战役模式'), g.w / 2, 46, {
+    size: 30, weight: 800, align: 'center', baseline: 'middle', color: Palette.ink,
+  });
+  text(ctx, T(`stage ${s.unlocked + 1} of ${STAGES.length} unlocked  ·  ESC to go back`,
+    `已解锁第 ${s.unlocked + 1} / ${STAGES.length} 关  ·  按 ESC 返回`), g.w / 2, 76, {
+    size: 13, weight: 600, align: 'center', baseline: 'middle', color: Palette.dim,
+  });
+
+  const grid = selectGrid(g);
+  for (let i = 0; i < STAGES.length; i++) {
+    const cx = i % grid.cols, cy = Math.floor(i / grid.cols);
+    const x = grid.x0 + cx * (grid.cell + grid.gap);
+    const y = grid.y0 + cy * (grid.cell + grid.gap);
+    const locked = i > s.unlocked;
+    const current = i === s.stageIndex;
+    ctx.save();
+    roundRect(ctx, x, y, grid.cell, grid.cell, 6);
+    ctx.fillStyle = locked ? 'rgba(20,24,36,0.7)' : (current ? 'rgba(94,242,192,0.16)' : 'rgba(28,34,52,0.85)');
+    ctx.fill();
+    ctx.lineWidth = current ? 2 : 1;
+    ctx.strokeStyle = locked ? Palette.grid : (current ? Palette.accent : Palette.dim);
+    ctx.globalAlpha = locked ? 0.4 : 0.9;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    text(ctx, String(i + 1), x + grid.cell / 2, y + grid.cell / 2, {
+      size: Math.max(11, grid.cell * 0.32), weight: 700, align: 'center', baseline: 'middle',
+      color: locked ? Palette.dim : Palette.ink, alpha: locked ? 0.45 : 1,
+    });
+    ctx.restore();
+  }
+
+  const chip = grid.y0 + grid.rows * (grid.cell + grid.gap) + 20;
+  text(ctx, T('CLICK A STAGE TO PLAY IT', '点击一关开始游戏'), g.w / 2, chip, {
+    size: 13, weight: 600, align: 'center', baseline: 'middle', color: Palette.dim, alpha: 0.7,
+  });
+}
+
 // ---------------------------------------------------------------- frame
 
 function render(s, ctx, g) {
+  if (s.phase === 'select') { drawSelect(s, ctx, g, s.t); return; }
+
   const v = s.view;
   const sim = s.sim;
   const tt = s.t;
@@ -865,6 +1066,7 @@ function render(s, ctx, g) {
         T('Spell again before the rubble settles for a CHAIN multiplier.',
           '在碎块落定前再拼一个单词,即可获得连击加成。'),
         T('Let the pile rest above the top line and it is over.', '堆叠一旦停在警戒线以上,游戏结束。'),
+        T('Press C for the 50-stage Campaign.', '按 C 进入 50 关战役模式。'),
       ],
       prompt: T('CLICK TO START', '点击开始'),
       t: tt,
@@ -880,18 +1082,60 @@ function render(s, ctx, g) {
     if (s.overT > 0.18) {
       ctx.save();
       ctx.globalAlpha = clamp((s.overT - 0.18) * 3.2, 0, 1);
+      if (s.mode === 'campaign') {
+        const stage = STAGES[s.stageIndex];
+        titleCard(ctx, g, {
+          title: T('OVERFLOW', '已溢出'),
+          tagline: T(stage.name, stage.nameZh) + '  ·  ' + sim.score + ' / ' + stage.target,
+          lines: [
+            T('The pile overflowed before you reached the target.', '在达到目标之前,堆叠已经溢出。'),
+            T('CLICK OR PRESS R TO RETRY  ·  ESC FOR STAGE SELECT', '点击或按 R 重试  ·  按 ESC 返回选关'),
+          ],
+          prompt: T('RETRY', '重试'),
+          t: tt,
+          accent: Palette.hot,
+        });
+      } else {
+        titleCard(ctx, g, {
+          title: 'OVERFLOW',
+          tagline: sim.score + ' POINTS',
+          lines: [
+            sim.wordsMade + ' words · longest ' + (sim.longest ? sim.longest.toUpperCase() : '—')
+              + ' · best chain ×' + chainMult(sim.bestChain).toFixed(1),
+            'personal best ' + Math.max(s.best, sim.score)
+              + (s.bestWord ? '  ·  ' + s.bestWord.toUpperCase() : ''),
+          ],
+          prompt: 'CLICK OR PRESS R',
+          t: tt,
+          accent: Palette.hot,
+        });
+      }
+      ctx.restore();
+    }
+  }
+
+  if (s.phase === 'cleared') {
+    ctx.save();
+    ctx.fillStyle = 'rgba(7,8,13,' + clamp(s.overT * 1.6, 0, 0.9).toFixed(3) + ')';
+    ctx.fillRect(0, 0, g.w, g.h);
+    ctx.restore();
+    if (s.overT > 0.15) {
+      const stage = STAGES[s.stageIndex];
+      const hasNext = s.stageIndex + 1 < STAGES.length;
+      ctx.save();
+      ctx.globalAlpha = clamp((s.overT - 0.15) * 3.2, 0, 1);
       titleCard(ctx, g, {
-        title: 'OVERFLOW',
-        tagline: sim.score + ' POINTS',
+        title: T('STAGE CLEAR', '通关'),
+        tagline: T(stage.name, stage.nameZh) + '  ·  ' + sim.score + ' / ' + stage.target,
         lines: [
-          sim.wordsMade + ' words · longest ' + (sim.longest ? sim.longest.toUpperCase() : '—')
-            + ' · best chain ×' + chainMult(sim.bestChain).toFixed(1),
-          'personal best ' + Math.max(s.best, sim.score)
-            + (s.bestWord ? '  ·  ' + s.bestWord.toUpperCase() : ''),
+          hasNext
+            ? T('Stage ' + (s.stageIndex + 2) + ' is now unlocked.', '第 ' + (s.stageIndex + 2) + ' 关已解锁。')
+            : T('That was the last stage — campaign complete!', '这是最后一关——通关完成!'),
+          T('CLICK / SPACE FOR NEXT STAGE  ·  ESC FOR STAGE SELECT', '点击或空格进入下一关  ·  按 ESC 返回选关'),
         ],
-        prompt: 'CLICK OR PRESS R',
+        prompt: hasNext ? T('NEXT STAGE', '下一关') : T('STAGE SELECT', '选关'),
         t: tt,
-        accent: Palette.hot,
+        accent: Palette.accent,
       });
       ctx.restore();
     }
@@ -1082,11 +1326,59 @@ registerSelftest('lexicon', (check, log) => {
     `score ${before} -> ${live.score}, tiles=${live.tiles.length}`);
   check('live state stays finite', allFinite(game.state.sim).ok);
 
+  // --- Campaign: STAGES structure, stage init, target-reachable, unlock persistence
+  check('STAGES has exactly 50 stages', STAGES.length === 50, `n=${STAGES.length}`);
+  check('stage targets climb monotonically', STAGES.every((st, i) => i === 0 || st.target > STAGES[i - 1].target),
+    STAGES.map((st) => st.target).join(','));
+  check('spawnScale never increases (tiles only speed up)',
+    STAGES.every((st, i) => i === 0 || st.spawnScale <= STAGES[i - 1].spawnScale + 1e-9));
+  check('vowelFloor stays in the clamped, playable band [0.20, 0.30]',
+    STAGES.every((st) => st.vowelFloor >= 0.20 && st.vowelFloor <= 0.30),
+    STAGES.map((st) => st.vowelFloor.toFixed(2)).join(','));
+  check('dangerY only rises (playfield only shrinks) in the last 10 stages',
+    STAGES.every((st, i) => (i < 40 ? st.dangerY === DANGER_Y : st.dangerY >= DANGER_Y) && st.dangerY <= DANGER_Y + 60),
+    STAGES.map((st) => st.dangerY).join(','));
+
+  // stage init wires the sim's tuning knobs through
+  const stg5 = STAGES[5];
+  const simStg5 = makeStageSim('LEX-STG5', stg5);
+  check('makeStageSim wires target/spawnScale/vowelFloor/dangerY onto the sim',
+    simStg5.target === stg5.target && simStg5.spawnScale === stg5.spawnScale
+      && simStg5.vowelFloor === stg5.vowelFloor && simStg5.dangerY === stg5.dangerY,
+    `target=${simStg5.target} spawnScale=${simStg5.spawnScale} vowelFloor=${simStg5.vowelFloor} dangerY=${simStg5.dangerY}`);
+
+  // target-reachable: a tiny target clears the instant a valid word is scored
+  const clearSim = makeSim('LEX-CLEAR', { prefill: 0, autoSpawn: false, target: 1 });
+  const clearWord = layWord(clearSim, 'cat', 60, FLOOR);
+  settle(clearSim, 200);
+  drag(clearSim, clearWord, dt);
+  check('stage clears the instant score reaches target', clearSim.cleared === true && clearSim.score >= 1,
+    `cleared=${clearSim.cleared} score=${clearSim.score}`);
+
+  // unlock persistence — drive the live game through a real stage clear and confirm Store persists it
+  game.restart();
+  game.state.mode = 'campaign';
+  game.state.stageIndex = 0;
+  game.state.unlocked = 0;
+  game.state.phase = 'play';
+  game.state.sim = makeSim('LEX-UNLOCK', { prefill: 0, autoSpawn: false, target: 1 });
+  const unlockWord = layWord(game.state.sim, 'dog', 70, FLOOR);
+  game.step(180);
+  const uv = game.state.view;
+  for (const t of unlockWord) { game.input.pointDown(toScreenX(uv, t.x), toScreenY(uv, t.y)); game.step(2); }
+  game.input.pointUp(toScreenX(uv, unlockWord[2].x), toScreenY(uv, unlockWord[2].y));
+  game.step(2);
+  check('clearing a stage flips phase to cleared and unlocks the next one',
+    game.state.phase === 'cleared' && game.state.unlocked === 1,
+    `phase=${game.state.phase} unlocked=${game.state.unlocked}`);
+  check('unlock is persisted to Store', Store.get(UNLOCK_KEY, -1) === 1, `stored=${Store.get(UNLOCK_KEY, -1)}`);
+  Store.set(UNLOCK_KEY, 0); // leave the persisted save as we found it
+
   game.restart();
   log(`words=${WORD_COUNT} jar=${WORLD_W}x${WORLD_H} r=${TILE_R} cap=${MAX_TILES}`);
 });
 
 // dev console handles
-globalThis.__lexicon = { makeSim, stepSim, findWord, settle, addTile, scoreFor, game };
+globalThis.__lexicon = { makeSim, stepSim, findWord, settle, addTile, scoreFor, game, STAGES };
 
 export default game;

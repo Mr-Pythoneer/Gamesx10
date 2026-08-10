@@ -19,6 +19,7 @@ import {
 import {
   generate, countSolutions, solveFirst, positionsOf, clueHolds,
   TIERS, ATTRS, SHIP, BERTHS, valueLabel,
+  CASES, generateCaseN,
 } from './generate.js';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -38,6 +39,9 @@ const TIER_BLURB_ZH = {
 };
 const ATTR_ZH = { NAME: '姓名', ROLE: '职务', FATE: '结局' };
 const SHIP_LINE_ZH = '勘测三桅船。九人于佩尔港登船,无一归来。';
+
+const CAMPAIGN_UNLOCKED_KEY = 'campaignUnlocked';
+const CAMPAIGN_SOLVED_KEY = 'campaignSolved';
 
 function tierLabel(tier) { return T(tier.label, TIER_ZH[tier.label] || tier.label); }
 function tierBlurb(tier) { return T(tier.blurb, TIER_BLURB_ZH[tier.blurb] || tier.blurb); }
@@ -69,14 +73,14 @@ function blankBoard(attrs) {
   return { grid, locked, ruled };
 }
 
-function newPuzzle(s, seedStr, tierIndex) {
-  const tier = TIERS[clamp(tierIndex | 0, 0, TIERS.length - 1)];
-  s.seedStr = String(seedStr).toUpperCase();
-  s.tierIndex = TIERS.indexOf(tier);
-  s.puzzle = generate(s.seedStr, tier.id);
-  s.attrs = s.puzzle.attrs.slice();
+/** Shared board/session reset — used by both free-roll and Campaign puzzle loads. */
+function applyPuzzle(s, puzzle) {
+  s.puzzle = puzzle;
+  s.seedStr = String(puzzle.seed).toUpperCase();
+  s.tierIndex = puzzle.tierIndex;
+  s.attrs = puzzle.attrs.slice();
   Object.assign(s, blankBoard(s.attrs));
-  s.pinned = s.puzzle.clues.map(() => 0);
+  s.pinned = puzzle.clues.map(() => 0);
   s.cells = s.attrs.length * BERTHS;
   s.lockedCount = 0;
   s.confirms = 0;
@@ -96,7 +100,25 @@ function newPuzzle(s, seedStr, tierIndex) {
   s._wrap = null;
   s._boxes = null;
   if (s.phase === 'solved' || s.phase === 'lockin') s.phase = 'play';
+}
+
+function newPuzzle(s, seedStr, tierIndex) {
+  const tier = TIERS[clamp(tierIndex | 0, 0, TIERS.length - 1)];
+  s.mode = 'free';
+  s.caseN = 0;
+  applyPuzzle(s, generate(String(seedStr).toUpperCase(), tier.id));
   Store.set('tier', s.tierIndex);
+  return s;
+}
+
+/** Load Campaign case N (1-based, clamped). Refuses locked cases — falls back to
+ *  whichever case is currently unlocked. */
+function newPuzzleCase(s, n) {
+  const unlocked = clamp(Store.get(CAMPAIGN_UNLOCKED_KEY, 1), 1, CASES.length);
+  const caseN = clamp(n | 0, 1, unlocked);
+  s.mode = 'campaign';
+  s.caseN = caseN;
+  applyPuzzle(s, generateCaseN(caseN));
   return s;
 }
 
@@ -111,6 +133,10 @@ function init(g) {
     lock: null, fail: 0, flash: 0,
     msg: '', msgT: 0, msgTone: 0, solvedAt: 0,
     solvedTotal: Store.get('solved', 0),
+    mode: 'free', caseN: 0,
+    campaignUnlocked: clamp(Store.get(CAMPAIGN_UNLOCKED_KEY, 1), 1, CASES.length),
+    campaignSolved: Store.get(CAMPAIGN_SOLVED_KEY, {}),
+    casesScroll: 0, casesScrollMax: 0,
     _wrapKey: '', _wrap: null, _wrapSpace: 8, _boxes: null,
   };
   const tier = clamp(Store.get('tier', 1), 0, TIERS.length - 1);
@@ -233,6 +259,15 @@ function finishSolve(s, g) {
   const tier = TIERS[s.tierIndex].id;
   s.newBestTime = Store.best('bestTime:' + tier, Math.round(s.time * 10) / 10, false);
   s.newBestConf = Store.best('bestConfirms:' + tier, s.confirms, false);
+  if (s.mode === 'campaign' && s.caseN > 0) {
+    const solved = { ...s.campaignSolved, [s.caseN]: true };
+    s.campaignSolved = solved;
+    Store.set(CAMPAIGN_SOLVED_KEY, solved);
+    const nextUnlock = clamp(s.caseN + 1, 1, CASES.length);
+    s.campaignUnlocked = Math.max(s.campaignUnlocked, nextUnlock);
+    Store.set(CAMPAIGN_UNLOCKED_KEY, s.campaignUnlocked);
+    s.newCaseUnlocked = nextUnlock > s.caseN && nextUnlock <= CASES.length && nextUnlock === s.campaignUnlocked;
+  }
   FX.shake(10);
   Sound.ok();
   Sound.tone({ freq: 523, dur: 0.5, type: 'triangle', gain: 0.1, at: 0.08 });
@@ -300,21 +335,44 @@ function layout(g, s) {
     buttons.push({ id: 'confirm', x: pad, y: y1, w: cw, h: btnH, label: T('CONFIRM', '确认') });
     buttons.push({ id: 'clear', x: pad + cw + pad, y: y1, w: sw, h: btnH, label: T('CLEAR', '清空') });
     buttons.push({ id: 'new', x: pad + cw + pad + sw + pad, y: y1, w: sw, h: btnH, label: T('NEW', '新局') });
-    const tw = Math.max(40, Math.round((avail - pad * 3) / 4));
+    const tw = Math.max(32, Math.round((avail - pad * 4) / 5));
     for (let i = 0; i < 3; i++) buttons.push({ id: 'tier' + i, x: pad + i * (tw + pad), y: y2, w: tw, h: btnH, label: T(TIERS[i].label, TIERS[i].labelZh || TIERS[i].label).slice(0, 5) });
     buttons.push({ id: 'view', x: pad + 3 * (tw + pad), y: y2, w: tw, h: btnH, label: s.view ? T('ROSTER', '名册') : T('PAPERS', '文书') });
+    buttons.push({ id: 'cases', x: pad + 4 * (tw + pad), y: y2, w: tw, h: btnH, label: T('CASES', '战役') });
   } else {
     const cw = clamp(Math.round(w * 0.2), 120, 210);
     const sw = Math.max(58, Math.round(74 * S));
     buttons.push({ id: 'confirm', x: pad, y: y1, w: cw, h: btnH, label: T('CONFIRM  ⏎', '确认  ⏎') });
     buttons.push({ id: 'clear', x: pad + cw + pad, y: y1, w: sw, h: btnH, label: T('CLEAR', '清空') });
     buttons.push({ id: 'new', x: pad + cw + pad * 2 + sw, y: y1, w: sw + Math.round(18 * S), h: btnH, label: T('NEW SEED', '新种子') });
+    buttons.push({ id: 'cases', x: pad + cw + pad * 3 + sw * 2 + Math.round(18 * S), y: y1, w: sw + Math.round(6 * S), h: btnH, label: T('CASES', '战役') });
     const tw = Math.max(56, Math.round(84 * S));
     const x0 = w - pad - tw * 3 - pad * 2;
     for (let i = 0; i < 3; i++) buttons.push({ id: 'tier' + i, x: x0 + i * (tw + pad), y: y1, w: tw, h: btnH, label: T(TIERS[i].label, TIERS[i].labelZh || TIERS[i].label) });
   }
 
-  return { S, pad, narrow, headH, footH, btnH, roster, papers, colHeadH, rowH, gridTop, bnW, colStride, colGap, cell, berthTag, list, listHeadH, buttons, A, w, h };
+  // Campaign case-picker grid — a simple wrap of numbered tiles between header and footer.
+  const casesArea = { x: pad, y: bodyY + pad, w: Math.max(120, w - pad * 2), h: Math.max(60, bodyH - pad * 2) };
+  const casesCols = clamp(Math.floor(casesArea.w / (narrow ? 56 : 74)), 4, 10);
+  const casesGap = Math.max(4, Math.round(6 * S));
+  const caseTileW = (casesArea.w - casesGap * (casesCols - 1)) / casesCols;
+  const caseTileH = Math.max(30, Math.round(38 * S));
+  const casesRows = Math.ceil(CASES.length / casesCols);
+  const caseTile = (i) => {
+    const col = i % casesCols, row = Math.floor(i / casesCols);
+    return {
+      x: casesArea.x + col * (caseTileW + casesGap),
+      y: casesArea.y + row * (caseTileH + casesGap) - s.casesScroll,
+      w: caseTileW, h: caseTileH,
+    };
+  };
+  const casesContentH = casesRows * caseTileH + Math.max(0, casesRows - 1) * casesGap;
+
+  return {
+    S, pad, narrow, headH, footH, btnH, roster, papers, colHeadH, rowH, gridTop, bnW, colStride, colGap,
+    cell, berthTag, list, listHeadH, buttons, A, w, h,
+    casesArea, casesCols, casesRows, caseTile, casesContentH,
+  };
 }
 
 /** Popup for the currently open cell. Pure arithmetic so the self-test can click it. */
@@ -372,6 +430,34 @@ function update(s, dt, g) {
     return;
   }
 
+  if (s.phase === 'cases') {
+    s.casesScrollMax = Math.max(0, L.casesContentH - L.casesArea.h);
+    if (I.justPressed('escape') || I.justPressed('c')) { s.phase = 'play'; Sound.blip(340); return; }
+    if (I.isDown('down')) s.casesScroll = clamp(s.casesScroll + 420 * dt, 0, s.casesScrollMax);
+    if (I.isDown('up')) s.casesScroll = clamp(s.casesScroll - 420 * dt, 0, s.casesScrollMax);
+    s.casesScroll = clamp(s.casesScroll, 0, s.casesScrollMax);
+    if (I.pointerPressed) {
+      const px0 = I.pointer.x, py0 = I.pointer.y;
+      for (const b of L.buttons) {
+        if (b.id === 'cases' && hit(b, px0, py0)) { s.phase = 'play'; Sound.blip(340); return; }
+      }
+      for (let i = 0; i < CASES.length; i++) {
+        const r = L.caseTile(i);
+        if (!hit(r, px0, py0)) continue;
+        const n = i + 1;
+        if (n <= s.campaignUnlocked) {
+          newPuzzleCase(s, n);
+          s.phase = 'play';
+          Sound.blip(560 + (n % 12) * 10);
+        } else {
+          Sound.blip(160);
+        }
+        return;
+      }
+    }
+    return;
+  }
+
   if (s.phase === 'play' || s.phase === 'lockin') s.time += dt;
 
   if (s.phase === 'lockin' && s.lock) {
@@ -401,6 +487,7 @@ function update(s, dt, g) {
   if (I.justPressed('n')) { newPuzzle(s, randomSeedString(6), s.tierIndex); s.phase = 'play'; Sound.blip(600); return; }
   if (I.justPressed('r')) { clearBoard(s); s.picker = null; Sound.blip(300); }
   if (I.justPressed('tab') || I.justPressed('v')) s.view = s.view ? 0 : 1;
+  if (I.justPressed('c')) { s.phase = 'cases'; Sound.blip(400); return; }
   for (let i = 0; i < 3; i++) {
     if (I.justPressed(String(i + 1))) {
       newPuzzle(s, randomSeedString(6), i);
@@ -412,7 +499,14 @@ function update(s, dt, g) {
   if (I.isDown('up')) s.scroll = clamp(s.scroll - 420 * dt, 0, s.scrollMax);
 
   if (s.phase === 'solved') {
-    if (I.justPressed('space') || I.pointerPressed) { newPuzzle(s, randomSeedString(6), s.tierIndex); s.phase = 'play'; }
+    if (I.justPressed('space') || I.pointerPressed) {
+      if (s.mode === 'campaign' && s.caseN < s.campaignUnlocked) {
+        newPuzzleCase(s, s.caseN + 1);
+      } else {
+        newPuzzle(s, randomSeedString(6), s.tierIndex);
+      }
+      s.phase = 'play';
+    }
     return;
   }
 
@@ -465,6 +559,7 @@ function update(s, dt, g) {
       else if (b.id === 'clear') { clearBoard(s); Sound.blip(300); }
       else if (b.id === 'new') { newPuzzle(s, randomSeedString(6), s.tierIndex); s.phase = 'play'; Sound.blip(600); }
       else if (b.id === 'view') { s.view = s.view ? 0 : 1; Sound.blip(440); }
+      else if (b.id === 'cases') { s.phase = 'cases'; Sound.blip(400); }
       else if (b.id.startsWith('tier')) {
         const t = Number(b.id.slice(4));
         newPuzzle(s, randomSeedString(6), t); s.phase = 'play'; Sound.blip(500 + t * 80);
@@ -648,6 +743,53 @@ function render(s, ctx, g) {
   }
   if (s.phase === 'intro') drawIntro(s, ctx, g, L);
   if (s.phase === 'solved') drawSolved(s, ctx, g, L);
+  if (s.phase === 'cases') drawCases(s, ctx, g, L);
+}
+
+function drawCases(s, ctx, g, L) {
+  const S = L.S;
+  ctx.fillStyle = 'rgba(7,8,13,0.93)';
+  ctx.fillRect(0, 0, g.w, g.h);
+
+  const hy = L.headH / 2;
+  text(ctx, T('THE CAMPAIGN', '战役'), L.pad, hy, { size: Math.max(11, 13 * S), color: Palette.accent, baseline: 'middle', weight: 700 });
+  text(ctx, T(`${s.campaignUnlocked}/${CASES.length} UNLOCKED  ·  ESC or C to close`, `已解锁 ${s.campaignUnlocked}/${CASES.length} · 按 ESC 或 C 关闭`),
+    g.w - L.pad, hy, { size: Math.max(9, 9.5 * S), color: Palette.dim, align: 'right', baseline: 'middle' });
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(L.casesArea.x, L.casesArea.y - 2, L.casesArea.w, L.casesArea.h + 4);
+  ctx.clip();
+
+  for (let i = 0; i < CASES.length; i++) {
+    const r = L.caseTile(i);
+    if (r.y + r.h < L.casesArea.y - 4 || r.y > L.casesArea.y + L.casesArea.h + 4) continue;
+    const n = i + 1;
+    const unlocked = n <= s.campaignUnlocked;
+    const solved = !!s.campaignSolved[n];
+    const current = s.mode === 'campaign' && s.caseN === n;
+    const tierIdx = CASES[i].tierIndex;
+
+    ctx.fillStyle = solved ? 'rgba(94,242,192,0.14)' : unlocked ? Palette.panel : 'rgba(17,22,36,0.4)';
+    roundRect(ctx, r.x, r.y, r.w, r.h, 5); ctx.fill();
+    ctx.strokeStyle = current ? Palette.accent : solved ? Palette.accent : unlocked ? Palette.grid : 'rgba(255,255,255,0.06)';
+    ctx.globalAlpha = current ? 1 : 0.6;
+    ctx.lineWidth = current ? 1.5 : 1;
+    roundRect(ctx, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 5); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    if (unlocked) {
+      text(ctx, String(n), r.x + r.w / 2, r.y + r.h * 0.36, {
+        size: Math.max(10, 12 * S), color: solved ? Palette.accent : Palette.ink, align: 'center', baseline: 'middle', weight: 700,
+      });
+      text(ctx, TIERS[tierIdx].label.slice(0, 3), r.x + r.w / 2, r.y + r.h * 0.72, {
+        size: Math.max(7, 7.5 * S), color: Palette.dim, align: 'center', baseline: 'middle',
+      });
+    } else {
+      text(ctx, '·', r.x + r.w / 2, r.y + r.h / 2, { size: Math.max(10, 12 * S), color: Palette.dim, align: 'center', baseline: 'middle', alpha: 0.4 });
+    }
+  }
+  ctx.restore();
 }
 
 function drawHeader(s, ctx, g, L) {
@@ -666,13 +808,25 @@ function drawHeader(s, ctx, g, L) {
   let x = L.pad;
   text(ctx, SHIP.name, x, y, { size: fs, color: Palette.ink, baseline: 'middle', weight: 700 });
   x += measureIn(ctx, SHIP.name, fs, 700) + gap;
-  const lSeed = T('SEED', '种子');
-  text(ctx, lSeed, x, y, { size: labelFs, color: Palette.dim, baseline: 'middle', weight: 600 });
-  x += measureIn(ctx, lSeed, labelFs, 600) + tight;
-  text(ctx, s.seedStr, x, y, { size: fs, color: Palette.accent, baseline: 'middle', weight: 700 });
-  if (!L.narrow) {
-    x += measureIn(ctx, s.seedStr, fs, 700) + gap;
-    text(ctx, tierLabel(TIERS[s.tierIndex]), x, y, { size: fs, color: Palette.dim, baseline: 'middle' });
+  if (s.mode === 'campaign' && s.caseN > 0) {
+    const lCase = T('CASE', '案');
+    text(ctx, lCase, x, y, { size: labelFs, color: Palette.dim, baseline: 'middle', weight: 600 });
+    x += measureIn(ctx, lCase, labelFs, 600) + tight;
+    const caseVal = `#${s.caseN}/${CASES.length}`;
+    text(ctx, caseVal, x, y, { size: fs, color: Palette.accent, baseline: 'middle', weight: 700 });
+    if (!L.narrow) {
+      x += measureIn(ctx, caseVal, fs, 700) + gap;
+      text(ctx, tierLabel(TIERS[s.tierIndex]), x, y, { size: fs, color: Palette.dim, baseline: 'middle' });
+    }
+  } else {
+    const lSeed = T('SEED', '种子');
+    text(ctx, lSeed, x, y, { size: labelFs, color: Palette.dim, baseline: 'middle', weight: 600 });
+    x += measureIn(ctx, lSeed, labelFs, 600) + tight;
+    text(ctx, s.seedStr, x, y, { size: fs, color: Palette.accent, baseline: 'middle', weight: 700 });
+    if (!L.narrow) {
+      x += measureIn(ctx, s.seedStr, fs, 700) + gap;
+      text(ctx, tierLabel(TIERS[s.tierIndex]), x, y, { size: fs, color: Palette.dim, baseline: 'middle' });
+    }
   }
 
   // right cluster — dim label, bright value, laid out right to left.
@@ -1001,7 +1155,7 @@ function drawIntro(s, ctx, g, L) {
   y += 20 * S;
   text(ctx, T('Fewer than three, and nothing is revealed. Guessing gets you nowhere.', '少于三项则什么都不会揭示。瞎猜没有用。'), cx, y, { size: 12 * S, color: Palette.dim, align: 'center' });
   y += 34 * S;
-  text(ctx, T('CLICK a cell to assign  ·  ENTER to confirm  ·  1 2 3 difficulty  ·  N new seed', '点击格子分配  ·  ENTER 确认  ·  1 2 3 难度  ·  N 换种子'), cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center' });
+  text(ctx, T('CLICK a cell to assign  ·  ENTER to confirm  ·  1 2 3 difficulty  ·  N new seed  ·  C campaign', '点击格子分配  ·  ENTER 确认  ·  1 2 3 难度  ·  N 换种子  ·  C 战役'), cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center' });
   y += 18 * S;
   text(ctx, T('Click a berth number to filter the papers  ·  R clears  ·  ESC backs out', '点击铺位编号筛选文书  ·  R 清空  ·  ESC 退出'), cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center', alpha: 0.75 });
   y += 36 * S;
@@ -1212,6 +1366,90 @@ registerSelftest('the-nine', (check, log) => {
   Store.set('bestTime:1', savedBestTime1);
   Store.set('bestConfirms:1', savedBestConfirms1);
 
+  // --- CAMPAIGN: 50-case structure, uniqueness, escalation and unlock persistence.
+  // Isolated the same way as the win-condition test above: real Store keys are saved
+  // and restored around it so running the self-test never overwrites real progress.
+  const savedUnlocked = Store.get(CAMPAIGN_UNLOCKED_KEY, 1);
+  const savedCampSolved = Store.get(CAMPAIGN_SOLVED_KEY, {});
+
+  check('CASES has exactly 50 entries, numbered 1..50 in order', CASES.length === 50 && CASES.every((c, i) => c.n === i + 1),
+    `len=${CASES.length}`);
+
+  let capUniqFail = [], capTruthFail = [];
+  const capPuzzles = CASES.map((c) => generateCaseN(c.n));
+  for (let i = 0; i < capPuzzles.length; i++) {
+    const p = capPuzzles[i];
+    if (countSolutions(p, 2) !== 1) capUniqFail.push(CASES[i].n);
+    const pos = positionsOf(p);
+    for (const cl of p.clues) if (!clueHolds(cl, pos)) capTruthFail.push(CASES[i].n);
+  }
+  check('every Campaign case (1-50) has exactly ONE solution', capUniqFail.length === 0,
+    `failures: ${capUniqFail.slice(0, 6).join(',') || 'none'}`);
+  check('the ground truth satisfies every clue in every Campaign case', capTruthFail.length === 0,
+    capTruthFail.slice(0, 6).join(','));
+
+  const capTierIdx = capPuzzles.map((p) => p.tierIndex);
+  const escalates = capTierIdx.slice(0, 15).every((t) => t === 0)
+    && capTierIdx.slice(15, 35).every((t) => t === 1)
+    && capTierIdx.slice(35, 50).every((t) => t === 2);
+  check('Campaign tier escalates cadet(1-15) -> officer(16-35) -> archivist(36-50)', escalates,
+    `tiers=${capTierIdx.join('')}`);
+
+  const cadetClues = capPuzzles.slice(0, 15).map((p) => p.clues.length);
+  const officerClues = capPuzzles.slice(15, 35).map((p) => p.clues.length);
+  const archivistClues = capPuzzles.slice(35, 50).map((p) => p.clues.length);
+  const roughlyDescends = (arr) => arr[0] >= arr[arr.length - 1];
+  check('within each tier band, clue count generally tapers from case 1 toward the last (looser -> tighter to the uniqueness boundary)',
+    roughlyDescends(cadetClues) && roughlyDescends(officerClues) && roughlyDescends(archivistClues),
+    `cadet ${cadetClues.join(',')} | officer ${officerClues.join(',')} | archivist ${archivistClues.join(',')}`);
+
+  // minimality sample across the Campaign (>=10 cases): removing any single clue breaks uniqueness
+  const capSampleIdx = [0, 5, 10, 14, 15, 20, 25, 34, 35, 40, 45, 49];
+  let capMinFail = [];
+  for (const i of capSampleIdx) {
+    const p = capPuzzles[i];
+    for (let k = 0; k < p.clues.length; k++) {
+      const sub = { attrs: p.attrs, clues: p.clues.filter((_, j) => j !== k) };
+      if (countSolutions(sub, 2) === 1) capMinFail.push(`case${CASES[i].n}#${k}`);
+    }
+  }
+  check(`Campaign minimality holds on a ${capSampleIdx.length}-case sample (no redundant clue)`, capMinFail.length === 0,
+    capMinFail.slice(0, 6).join(','));
+
+  // case init: loading case 1 through the real game gives the expected puzzle
+  Store.set(CAMPAIGN_UNLOCKED_KEY, 1);
+  Store.set(CAMPAIGN_SOLVED_KEY, {});
+  game.puzzleSeed = null;
+  game.restart();
+  newPuzzleCase(game.state, 1);
+  const sc = game.state;
+  check('Campaign case init loads case 1 through newPuzzleCase',
+    sc.mode === 'campaign' && sc.caseN === 1 && sc.puzzle.seed === CASES[0].seed && sc.puzzle.tierIndex === CASES[0].tierIndex,
+    `mode=${sc.mode} caseN=${sc.caseN} seed=${sc.puzzle.seed}`);
+  check('case 2 is locked until case 1 is solved (loading it clamps back to the unlocked ceiling)',
+    (() => { newPuzzleCase(sc, 2); return sc.caseN === 1; })(), `caseN=${sc.caseN}`);
+
+  // solve-path + unlock persistence, via the real assign/doConfirm path, for every one of the 50 cases
+  let capSolveFail = [];
+  for (const c of CASES) {
+    Store.set(CAMPAIGN_UNLOCKED_KEY, c.n);
+    newPuzzleCase(sc, c.n);
+    sc.phase = 'play';
+    for (const a of sc.attrs) for (let b = 0; b < BERTHS; b++) assign(sc, a, b, sc.puzzle.truth[a][b]);
+    doConfirm(sc, game);
+    game.step(200);
+    const wantUnlock = Math.min(c.n + 1, CASES.length);
+    const unlockedOK = c.n === CASES.length ? true : Store.get(CAMPAIGN_UNLOCKED_KEY, 1) >= wantUnlock;
+    if (!(sc.phase === 'solved' && sc.lockedCount === sc.cells && unlockedOK)) {
+      capSolveFail.push(`case${c.n}:phase=${sc.phase},locked=${sc.lockedCount}/${sc.cells},unlock=${Store.get(CAMPAIGN_UNLOCKED_KEY, 1)}`);
+    }
+  }
+  check('every one of the 50 Campaign cases is solvable via the real confirm path, and solving one unlocks the next',
+    capSolveFail.length === 0, capSolveFail.slice(0, 3).join(' | ') || 'all 50 ok');
+
+  Store.set(CAMPAIGN_UNLOCKED_KEY, savedUnlocked);
+  Store.set(CAMPAIGN_SOLVED_KEY, savedCampSolved);
+
   // 9. long chaotic run: no throw, nothing goes non-finite
   game.puzzleSeed = 'TESTBB';
   game.restart();
@@ -1278,6 +1516,6 @@ registerSelftest('the-nine', (check, log) => {
 });
 
 // dev console handles
-globalThis.__theNine = { generate, countSolutions, solveFirst, layout, doConfirm, assign, newPuzzle, TIERS };
+globalThis.__theNine = { generate, countSolutions, solveFirst, layout, doConfirm, assign, newPuzzle, newPuzzleCase, TIERS, CASES, generateCaseN };
 
 export default game;

@@ -122,6 +122,17 @@ function getGrid(levelIndex) {
   return gridCache.get(levelIndex) || buildGrid(levelIndex);
 }
 
+/**
+ * Dev/tooling hook only — never called by the live game. LEVELS never change at
+ * runtime, which is why the grid is normally cached forever; the level generator's
+ * verify loop (generator.js/solver.js) mutates LEVELS[idx] in place while searching
+ * for a solvable draft, so it needs a way to invalidate the stale cached grid for that
+ * slot between attempts.
+ */
+export function invalidateGrid(levelIndex) {
+  gridCache.delete(levelIndex);
+}
+
 function cellAt(map, x, y) {
   const cx = Math.floor(x / GRID_CELL), cy = Math.floor(y / GRID_CELL);
   return map.get(cx * 73856093 ^ cy * 19349663);

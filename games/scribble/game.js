@@ -178,7 +178,7 @@ function update(s, dt, g) {
     s.winT += dt;
     if ((I.justPressed('space') || I.justPressed('enter')) && s.winT > 0.35) {
       const next = s.levelIndex + 1;
-      if (next >= LEVELS.length) { loadLevel(s, 0); say(s, 'ALL TWELVE SOLVED — RUN IT BACK', '十二关全部通关——再来一轮'); }
+      if (next >= LEVELS.length) { loadLevel(s, 0); say(s, 'ALL FIFTY SOLVED — RUN IT BACK', '五十关全部通关——再来一轮'); }
       else loadLevel(s, next);
       return;
     }
@@ -1010,8 +1010,8 @@ registerSelftest('scribble', (check, log) => {
       && s.inkBudget === L.ink && s.ball.x === L.ball.x && s.status === 'play';
     if (ok) parsed++; else badLevels.push(i);
   }
-  check('all 12 levels parse with ball start, goal and ink budget',
-    parsed === LEVELS.length && LEVELS.length === 12, `${parsed}/${LEVELS.length} bad=[${badLevels}]`);
+  check('all 50 levels parse with ball start, goal and ink budget',
+    parsed === LEVELS.length && LEVELS.length === 50, `${parsed}/${LEVELS.length} bad=[${badLevels}]`);
 
   // ---- 2. input creates geometry
   const s2 = makeSim(0);

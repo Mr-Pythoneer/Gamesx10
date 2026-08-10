@@ -14,6 +14,7 @@ import {
 import {
   WEAPONS, WEAPON_IDS, PASSIVES, PASSIVE_IDS, EVOLUTIONS,
   ENEMIES, BOSS, CHARACTERS, directorAt, RUN_DURATION,
+  STAGE_COUNT, stageDuration, stageDirectorAt,
 } from './content.js';
 
 // ---------------------------------------------------------------- tuning constants
@@ -29,7 +30,7 @@ const MAX_PROJECTILES = 1800;
 
 // ================================================================== PURE SIMULATION
 
-export function makeSim(seed, characterId, meta = {}) {
+export function makeSim(seed, characterId, meta = {}, stageNum = null) {
   const rng = new RNG(seed);
   const character = CHARACTERS.find((c) => c.id === characterId) || CHARACTERS[0];
   const player = {
@@ -45,6 +46,9 @@ export function makeSim(seed, characterId, meta = {}) {
     bladeAngle: 0,
     cd: {},
   };
+  // stageNum selects a campaign mission (1..STAGE_COUNT); null keeps the original
+  // 10-minute endless-to-boss run intact (used by legacy code paths/tests).
+  const clampedStage = stageNum == null ? null : clamp(Math.round(stageNum), 1, STAGE_COUNT);
   return {
     seed, rng, characterId: character.id,
     player,
@@ -57,6 +61,8 @@ export function makeSim(seed, characterId, meta = {}) {
     bossSpawned: false, boss: null,
     phase: 'playing', draft: null,
     frame: 0, t: 0,
+    stageNum: clampedStage,
+    stageDuration: clampedStage != null ? stageDuration(clampedStage) : RUN_DURATION,
   };
 }
 
@@ -183,7 +189,7 @@ function spawnEnemy(sim, dir, forceElite) {
 function updateSpawner(sim, dt) {
   if (sim.bossSpawned) return;
   sim.spawnT -= dt;
-  const dir = directorAt(sim.elapsed);
+  const dir = sim.stageNum != null ? stageDirectorAt(sim.stageNum, sim.elapsed) : directorAt(sim.elapsed);
   if (sim.spawnT <= 0) {
     sim.spawnT = lerp(1.1, 0.12, dir.density);
     const n = 1 + Math.floor(dir.density * 3);
@@ -522,18 +528,27 @@ function checkLevelUp(sim) {
   }
 }
 
+// Legacy endless mode (stageNum == null) and campaign stage STAGE_COUNT both end in a
+// real boss fight. Every other campaign stage's win condition is simpler: survive the
+// stage's full duration with HP > 0 (already enforced by checkLoseWin).
 function checkBoss(sim) {
-  if (!sim.bossSpawned && sim.elapsed >= RUN_DURATION) {
-    sim.bossSpawned = true;
-    const boss = {
-      id: sim.nextId++, type: 'boss', x: sim.player.x, y: sim.player.y - SPAWN_RADIUS * 0.7,
-      hp: BOSS.hp, maxHp: BOSS.hp, speed: BOSS.speed, dmg: BOSS.dmg, radius: BOSS.radius, xp: BOSS.xp,
-      dead: false, color: 'hot', shieldHp: 0, novaT: 2,
-    };
-    sim.boss = boss;
-    sim.enemies.push(boss);
+  const duration = sim.stageDuration != null ? sim.stageDuration : RUN_DURATION;
+  const isFinalStage = sim.stageNum == null || sim.stageNum >= STAGE_COUNT;
+  if (isFinalStage) {
+    if (!sim.bossSpawned && sim.elapsed >= duration) {
+      sim.bossSpawned = true;
+      const boss = {
+        id: sim.nextId++, type: 'boss', x: sim.player.x, y: sim.player.y - SPAWN_RADIUS * 0.7,
+        hp: BOSS.hp, maxHp: BOSS.hp, speed: BOSS.speed, dmg: BOSS.dmg, radius: BOSS.radius, xp: BOSS.xp,
+        dead: false, color: 'hot', shieldHp: 0, novaT: 2,
+      };
+      sim.boss = boss;
+      sim.enemies.push(boss);
+    }
+    if (sim.bossSpawned && sim.boss && sim.boss.dead && sim.phase === 'playing') sim.phase = 'win';
+  } else if (sim.phase === 'playing' && sim.elapsed >= duration) {
+    sim.phase = 'win';
   }
-  if (sim.bossSpawned && sim.boss && sim.boss.dead && sim.phase === 'playing') sim.phase = 'win';
 }
 
 function checkLoseWin(sim) {
@@ -609,8 +624,13 @@ function isUnlocked(ch, game) {
 
 function upgradeCost(lvl) { return 20 + lvl * 15; }
 
+function maxUnlockedStage(game) { return clamp(game.store.get('stageUnlocked', 1), 1, STAGE_COUNT); }
+
 function init(game) {
-  return { screen: 'title', charIndex: 0, sim: null, draftRects: [], endStats: null, prevPhase: null, titleT: 0, draftT: 0 };
+  return {
+    screen: 'title', charIndex: 0, sim: null, draftRects: [], endStats: null, prevPhase: null, titleT: 0, draftT: 0,
+    stageIndex: maxUnlockedStage(game),
+  };
 }
 
 function readIntent(game, state) {
@@ -643,13 +663,17 @@ function readIntent(game, state) {
 
 function handleTitleInput(state, game) {
   const inp = game.input;
+  const unlocked = maxUnlockedStage(game);
+  if (state.stageIndex > unlocked) state.stageIndex = unlocked;
   if (inp.justPressed('left')) state.charIndex = (state.charIndex + CHARACTERS.length - 1) % CHARACTERS.length;
   if (inp.justPressed('right')) state.charIndex = (state.charIndex + 1) % CHARACTERS.length;
+  if (inp.justPressed('up')) state.stageIndex = clamp(state.stageIndex - 1, 1, unlocked);
+  if (inp.justPressed('down')) state.stageIndex = clamp(state.stageIndex + 1, 1, unlocked);
   if (inp.justPressed('space') || inp.justPressed('enter')) {
     const ch = CHARACTERS[state.charIndex];
     if (isUnlocked(ch, game)) {
       const meta = { dmg: game.store.get('up_dmg', 0), speed: game.store.get('up_speed', 0), hp: game.store.get('up_hp', 0) };
-      state.sim = makeSim(game.rng.int(1e9) || 1, ch.id, meta);
+      state.sim = makeSim(game.rng.int(1e9) || 1, ch.id, meta, state.stageIndex);
       state.screen = 'run';
       state.endStats = null;
       state.prevPhase = 'playing';
@@ -694,10 +718,18 @@ function update(state, dt, game) {
   if (prevPhase === 'draft' && sim.phase === 'playing') game.sound.blip(880);
 
   if ((sim.phase === 'win' || sim.phase === 'lose') && !state.endStats) {
-    state.endStats = { kills: sim.kills, level: sim.player.level, time: sim.elapsed, gold: sim.gold, won: sim.phase === 'win' };
+    state.endStats = { kills: sim.kills, level: sim.player.level, time: sim.elapsed, gold: sim.gold, won: sim.phase === 'win', stageNum: sim.stageNum };
     game.store.set('gold', game.store.get('gold', 0) + sim.gold);
-    if (sim.phase === 'win') { game.store.set('wins', game.store.get('wins', 0) + 1); game.store.best('bestTime', sim.elapsed, false); game.sound.ok(); game.fx.shake(10); }
-    else { game.sound.bad(); game.fx.shake(14); }
+    if (sim.phase === 'win') {
+      game.store.set('wins', game.store.get('wins', 0) + 1);
+      game.store.best('bestTime', sim.elapsed, false);
+      game.sound.ok(); game.fx.shake(10);
+      if (sim.stageNum != null) {
+        game.store.set('stage_cleared_' + sim.stageNum, true);
+        const unlocked = game.store.get('stageUnlocked', 1);
+        if (sim.stageNum >= unlocked) game.store.set('stageUnlocked', Math.min(STAGE_COUNT, sim.stageNum + 1));
+      }
+    } else { game.sound.bad(); game.fx.shake(14); }
     game.store.best('bestKills', sim.kills, true);
   }
   if (sim.phase === 'win' || sim.phase === 'lose') {
@@ -1399,10 +1431,12 @@ function renderHud(sim, state, ctx, game) {
   stat(ctx, 16, y, T('level', '等级'), p.level, { color: Palette.warm, valueSize: vs });
   stat(ctx, 16 + (compact ? 76 : 100), y, T('kills', '击杀'), sim.kills, { valueSize: vs });
 
-  const timeLeft = Math.max(0, RUN_DURATION - sim.elapsed);
+  const duration = sim.stageDuration != null ? sim.stageDuration : RUN_DURATION;
+  const timeLeft = Math.max(0, duration - sim.elapsed);
   const mm = Math.floor(timeLeft / 60), ss = Math.floor(timeLeft % 60);
+  const stageLabel = sim.stageNum != null ? T(`stage ${sim.stageNum}/${STAGE_COUNT}`, `第 ${sim.stageNum}/${STAGE_COUNT} 关`) : T('time left', '剩余时间');
   stat(ctx, game.w / 2, y,
-    sim.bossSpawned ? T('final wave', '最终波次') : T('time left', '剩余时间'),
+    sim.bossSpawned ? T('final wave', '最终波次') : stageLabel,
     sim.bossSpawned ? T('BOSS', '首领') : `${mm}:${String(ss).padStart(2, '0')}`,
     { align: 'center', color: sim.bossSpawned ? Palette.hot : Palette.ink, valueSize: vs });
 
@@ -1618,9 +1652,10 @@ function renderTitle(state, ctx, game) {
 
   const compact = game.h < 560;
   const tSize = clamp(game.w * 0.1, 34, 62);
+  const stageH = compact ? 50 : 56;
   const charH = compact ? 96 : 116;
   const armH = compact ? 84 : 96;
-  const blockH = tSize * 0.78 + 26 + 22 + charH + 34 + armH;
+  const blockH = tSize * 0.78 + 26 + 22 + stageH + 12 + charH + 34 + armH;
   let y = HUD_H + Math.max(16, (game.h - HUD_H - 34 - blockH) / 2);
 
   y += tSize * 0.78;
@@ -1639,9 +1674,24 @@ function renderTitle(state, ctx, game) {
   });
   y += 26;
 
-  // --- operative
+  // --- campaign stage select
   const pw = Math.min(560, game.w - 40);
   const px = game.w / 2 - pw / 2;
+  const stageCleared = game.store.get('stage_cleared_' + state.stageIndex, false);
+  panel(ctx, px, y, pw, stageH, { title: T('campaign', '战役'), radius: 8 });
+  text(ctx, T(`STAGE ${state.stageIndex} / ${STAGE_COUNT}`, `第 ${state.stageIndex} / ${STAGE_COUNT} 关`), game.w / 2, y + (compact ? 22 : 26), {
+    size: compact ? 18 : 22, color: Palette.ink, align: 'center', weight: 700, font: SERIF,
+  });
+  const stageInfo = T(
+    `${stageDuration(state.stageIndex)}s mission${stageCleared ? '  ·  cleared' : ''}  ·  ↑↓ to pick`,
+    `${stageDuration(state.stageIndex)} 秒任务${stageCleared ? '  ·  已通关' : ''}  ·  ↑↓ 切换`,
+  );
+  text(ctx, stageInfo, game.w / 2, y + (compact ? 38 : 44), {
+    size: Type.small, color: Palette.dim, align: 'center',
+  });
+  y += stageH + 12;
+
+  // --- operative
   const ch = CHARACTERS[state.charIndex];
   const unlocked = isUnlocked(ch, game);
   panel(ctx, px, y, pw, charH, {
@@ -1814,6 +1864,59 @@ registerSelftest('swarm', (check, log) => {
   }
   check('every weapon, passive, and evolution applies and runs without error', allOk, errs.join(','));
 
+  // 9. campaign: stage init parameterizes duration/director off directorAt without
+  //    touching the endless-mode default (stageNum == null still uses RUN_DURATION).
+  const sc1 = makeSim(20, 'wren', {}, 1);
+  const sc75 = makeSim(21, 'wren', {}, STAGE_COUNT);
+  check('campaign stage count is 75', STAGE_COUNT === 75, `STAGE_COUNT=${STAGE_COUNT}`);
+  check('stage 1 is a short mission, stage 75 a long one, escalating monotonically',
+    sc1.stageDuration < sc75.stageDuration && sc1.stageDuration >= 40 && sc75.stageDuration <= 320,
+    `stage1=${sc1.stageDuration}s stage75=${sc75.stageDuration}s`);
+  check('endless mode (no stage arg) keeps the original 10-minute duration', makeSim(22, 'wren').stageDuration === RUN_DURATION);
+
+  // 10. a stage clears: a well-armed run on stage 1 should survive the short duration
+  const scWin = makeSim(23, 'thorn', {}, 1);
+  scWin.player.weapons = { nova: 8, aura: 8 };
+  scWin.player.passives = { might: 5, vigor: 5, armor: 5 };
+  let framesWin = 0;
+  for (; framesWin < 6000 && scWin.phase === 'playing'; framesWin++) {
+    stepSim(scWin, { mx: Math.sin(framesWin * 0.05), my: Math.cos(framesWin * 0.05) }, dt);
+    if (scWin.phase === 'draft') stepSim(scWin, { draftPick: 0 }, dt);
+  }
+  check('a well-built run clears stage 1', scWin.phase === 'win', `phase=${scWin.phase} hp=${scWin.player.hp.toFixed(1)} t=${scWin.elapsed.toFixed(1)}`);
+
+  // 11. a stage fails: standing still with no weapons on the hardest stage should lose
+  const scLose = makeSim(24, 'kestrel', {}, STAGE_COUNT);
+  scLose.player.weapons = {};
+  let framesLose = 0;
+  for (; framesLose < 6000 && scLose.phase === 'playing'; framesLose++) {
+    stepSim(scLose, { mx: 0, my: 0 }, dt);
+    if (scLose.phase === 'draft') stepSim(scLose, { draftPick: 0 }, dt);
+  }
+  check('an undefended run fails stage 75', scLose.phase === 'lose', `phase=${scLose.phase} hp=${scLose.player.hp.toFixed(1)}`);
+
+  // 12. stage progress: sequence is reachable from stage 1, and clearing a stage
+  //     persists the unlock through the real live-game code path (Store), not a shortcut.
+  game.restart();
+  game.store.set('stageUnlocked', 1);
+  game.state.screen = 'run';
+  game.state.sim = makeSim(25, 'wren', {}, 1);
+  game.state.sim.player.weapons = { nova: 8, aura: 8 };
+  game.state.sim.player.passives = { might: 5, vigor: 5, armor: 5 };
+  let liveFrames = 0;
+  for (; liveFrames < 6000 && game.state.sim.phase !== 'win' && game.state.sim.phase !== 'lose'; liveFrames++) {
+    if (game.state.sim.phase === 'draft') game.input.tap('1');
+    game.step(1);
+  }
+  check('stage 1 reachable and clearable through the live game loop', game.state.sim.phase === 'win', `phase=${game.state.sim.phase}`);
+  check('clearing stage 1 unlocks stage 2 via Store', game.store.get('stageUnlocked', 1) >= 2, `stageUnlocked=${game.store.get('stageUnlocked', 1)}`);
+  check('cleared flag for stage 1 persists via Store', game.store.get('stage_cleared_1', false) === true);
+
+  // 13. restarting a stage resets cleanly — no leaked enemies/kills/elapsed from a prior attempt
+  const freshAttempt = makeSim(25, 'wren', {}, 1);
+  check('a fresh stage attempt starts with zeroed state', freshAttempt.enemies.length === 0 && freshAttempt.kills === 0 && freshAttempt.elapsed === 0 && freshAttempt.phase === 'playing',
+    `enemies=${freshAttempt.enemies.length} kills=${freshAttempt.kills} elapsed=${freshAttempt.elapsed} phase=${freshAttempt.phase}`);
+
   // live-game check: injected kit input drives the real game loop
   game.restart();
   game.state.screen = 'run';
@@ -1829,6 +1932,9 @@ registerSelftest('swarm', (check, log) => {
   log(`weapons=${WEAPON_IDS.length} passives=${PASSIVE_IDS.length} evolutions=${EVOLUTIONS.length}`);
 });
 
-globalThis.__swarm = { makeSim, stepSim, applyCard, WEAPONS, PASSIVES, EVOLUTIONS, ENEMIES, BOSS, CHARACTERS, RUN_DURATION };
+globalThis.__swarm = {
+  makeSim, stepSim, applyCard, WEAPONS, PASSIVES, EVOLUTIONS, ENEMIES, BOSS, CHARACTERS, RUN_DURATION,
+  STAGE_COUNT, stageDuration, stageDirectorAt,
+};
 
 export default game;

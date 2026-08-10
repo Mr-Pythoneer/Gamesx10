@@ -80,20 +80,28 @@ function weightedPick(rng, table) {
   return rows[rows.length - 1][0];
 }
 
-/** Keeps the pile solvable: never a wall of consonants, never a puddle of vowels. */
+/**
+ * Keeps the pile solvable: never a wall of consonants, never a puddle of vowels.
+ * The floor/ceiling and rare-letter cap are read off the sim so campaign stages
+ * can skew the distribution (more consonants at higher stages) without ever
+ * being able to push it out of a playable range — see clamps in makeSim().
+ */
 export function pickLetter(sim) {
   const tiles = sim.tiles;
+  const vowelFloor = sim.vowelFloor === undefined ? 0.30 : sim.vowelFloor;
+  const vowelCeil = sim.vowelCeil === undefined ? 0.55 : sim.vowelCeil;
+  const rareCap = sim.rareCap === undefined ? 2 : sim.rareCap;
   let v = 0, rare = 0;
   for (let i = 0; i < tiles.length; i++) {
     if (VOWELS.includes(tiles[i].letter)) v++;
     if (RARE.includes(tiles[i].letter)) rare++;
   }
   const ratio = tiles.length ? v / tiles.length : 0.38;
-  if (tiles.length >= 6 && ratio < 0.30) return weightedPick(sim.rng, T_VOWEL);
-  if (tiles.length >= 6 && ratio > 0.55) return weightedPick(sim.rng, T_CONS);
+  if (tiles.length >= 6 && ratio < vowelFloor) return weightedPick(sim.rng, T_VOWEL);
+  if (tiles.length >= 6 && ratio > vowelCeil) return weightedPick(sim.rng, T_CONS);
   let l = weightedPick(sim.rng, T_ALL);
-  if (RARE.includes(l) && rare >= 2) l = weightedPick(sim.rng, T_CONS);
-  if (RARE.includes(l) && rare >= 2) l = weightedPick(sim.rng, T_VOWEL);
+  if (RARE.includes(l) && rare >= rareCap) l = weightedPick(sim.rng, T_CONS);
+  if (RARE.includes(l) && rare >= rareCap) l = weightedPick(sim.rng, T_VOWEL);
   return l;
 }
 
@@ -237,6 +245,13 @@ export function makeSim(seed = 1, opts = {}) {
     impact: 0,
     events: [],
     impulses: new Map(),   // warm-start cache, keyed by contact
+    // campaign tuning — clamped so no combination can make the pile unsolvable
+    vowelFloor: opts.vowelFloor === undefined ? 0.30 : clamp(opts.vowelFloor, 0.20, 0.30),
+    vowelCeil: opts.vowelCeil === undefined ? 0.55 : clamp(opts.vowelCeil, 0.55, 0.65),
+    rareCap: opts.rareCap === undefined ? 2 : clamp(opts.rareCap, 2, 3),
+    dangerY: opts.dangerY === undefined ? DANGER_Y : clamp(opts.dangerY, DANGER_Y, DANGER_Y + 60),
+    target: opts.target || 0,          // 0 = endless (no clear condition)
+    cleared: false,
   };
   // Opening rain: a curtain of tiles already on the way down.
   const prefill = opts.prefill === undefined ? 16 : opts.prefill;
@@ -664,12 +679,18 @@ export function stepSim(sim, intent, dt) {
     if (sim.chainT <= 0) { sim.chainT = 0; sim.chain = 0; }
   }
 
+  // --- stage clear (campaign only — target === 0 means endless, never clears)
+  if (!sim.over && !sim.cleared && sim.target > 0 && sim.score >= sim.target) {
+    sim.cleared = true;
+    sim.events.push({ type: 'cleared', score: sim.score });
+  }
+
   // --- overflow / lose
   if (!sim.over) {
     let bad = false;
     for (let i = 0; i < sim.tiles.length; i++) {
       const t = sim.tiles[i];
-      if ((t.asleep || t.still > 8) && t.y - t.r < DANGER_Y) { bad = true; break; }
+      if ((t.asleep || t.still > 8) && t.y - t.r < sim.dangerY) { bad = true; break; }
     }
     sim.overflowT = bad ? sim.overflowT + dt : Math.max(0, sim.overflowT - dt * 1.5);
     if (sim.overflowT > 0.9) {

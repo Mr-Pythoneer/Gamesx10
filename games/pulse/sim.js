@@ -21,8 +21,8 @@ const MAX_H = 0.02;            // never integrate more than 20ms at once (no tun
 const NEUTRAL = { jump: false, held: false, slide: false };
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-export function makeSim(seedString) {
-  const song = compose(seedString);
+export function makeSim(seedString, difficulty = 0) {
+  const song = compose(seedString, difficulty);
   return {
     seed: song.seed,
     song,
@@ -244,8 +244,8 @@ export function autoIntent(auto, sim) {
 }
 
 /** Play a seed to the end with the scripted player. Returns the finished sim. */
-export function autoRun(seedString, { dt = 1 / 60, maxFrames = 20000 } = {}) {
-  const sim = typeof seedString === 'string' ? makeSim(seedString) : seedString;
+export function autoRun(seedString, { dt = 1 / 60, maxFrames = 20000, difficulty = 0 } = {}) {
+  const sim = typeof seedString === 'string' ? makeSim(seedString, difficulty) : seedString;
   const auto = makeAuto(sim);
   let f = 0;
   while (!sim.won && !sim.dead && f++ < maxFrames) stepSim(sim, autoIntent(auto, sim), dt);
@@ -253,8 +253,8 @@ export function autoRun(seedString, { dt = 1 / 60, maxFrames = 20000 } = {}) {
 }
 
 /** Play a seed with no input at all. Returns the finished sim. */
-export function idleRun(seedString, { dt = 1 / 60, maxFrames = 20000 } = {}) {
-  const sim = typeof seedString === 'string' ? makeSim(seedString) : seedString;
+export function idleRun(seedString, { dt = 1 / 60, maxFrames = 20000, difficulty = 0 } = {}) {
+  const sim = typeof seedString === 'string' ? makeSim(seedString, difficulty) : seedString;
   let f = 0;
   while (!sim.won && !sim.dead && f++ < maxFrames) stepSim(sim, NEUTRAL, dt);
   return sim;

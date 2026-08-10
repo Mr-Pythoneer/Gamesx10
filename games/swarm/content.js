@@ -217,3 +217,46 @@ export function directorAt(tSec) {
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 export const RUN_DURATION = 600; // 10:00
+
+// ---------------------------------------------------------------- campaign stages
+// 75 discrete, individually-selectable missions built on top of the SAME directorAt
+// curve above — nothing here redefines density/weight/eliteChance math, it only picks
+// which slice of that curve a given stage plays through and how long the stage runs.
+
+export const STAGE_COUNT = 75;
+const STAGE_MIN_DURATION = 45;   // stage 1: a short skirmish
+const STAGE_MAX_DURATION = 300;  // stage 75: a 5-minute gauntlet
+
+/** 0 at stage 1, 1 at stage STAGE_COUNT. */
+export function stageProgress(n) {
+  return clamp01((n - 1) / (STAGE_COUNT - 1));
+}
+
+/** Seconds the given stage lasts, ramping linearly from 45s to 300s. */
+export function stageDuration(n) {
+  const t = stageProgress(n);
+  return Math.round(STAGE_MIN_DURATION + t * (STAGE_MAX_DURATION - STAGE_MIN_DURATION));
+}
+
+/**
+ * Director params for stage `n` at `tSecInStage` seconds into that stage. Reuses
+ * directorAt() verbatim by sampling it at a virtual point along the 10-minute curve:
+ * early stages sample near t=0 (director's gentle opening), late stages start their
+ * sampling window near RUN_DURATION (director's climax) so the whole campaign escalates
+ * smoothly even though each individual stage is much shorter than a full endless run.
+ * A small stage-number-driven density bonus keeps stage 75 climbing past what a single
+ * short stage could otherwise reach by sampling directorAt alone.
+ */
+export function stageDirectorAt(n, tSecInStage) {
+  const frac = stageProgress(n);
+  const startT = (RUN_DURATION - stageDuration(n)) * frac;
+  const virtualT = Math.min(RUN_DURATION, startT + Math.max(0, tSecInStage));
+  const dir = directorAt(virtualT);
+  const extraDensity = frac * frac * 0.25;
+  const extraElite = frac * frac * 0.05;
+  return {
+    density: clamp01(dir.density + extraDensity),
+    weights: dir.weights,
+    eliteChance: clamp01(dir.eliteChance + extraElite),
+  };
+}

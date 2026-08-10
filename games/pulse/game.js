@@ -30,6 +30,67 @@ const { SPIKE_H, CEIL_BOTTOM, PLAYER_W_T, LIVES } = PHYS;
 const SEED_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const START_SEED = 'PULSE1';
 
+// ---------------------------------------------------------------- campaign
+//
+// 50 curated, fixed stages: a seed plus a difficulty (0..1, fed straight into
+// compose()) with an escalating curve. Every one of them was found by generating
+// candidate seeds and keeping only those where verifyChart() passes AND a scripted
+// one-button run (autoRun) actually clears it with zero hits/misses AND doing
+// nothing (idleRun) actually dies — see the throwaway verification script whose
+// output is reproduced in the PR notes. This list is the result, frozen.
+const STAGES = [
+  { seed: 'S9DGH9', difficulty: 0 },
+  { seed: 'SG929H', difficulty: 0.0204 },
+  { seed: 'SP4M2S', difficulty: 0.0408 },
+  { seed: 'SWX8S3', difficulty: 0.0612 },
+  { seed: 'S5STKC', difficulty: 0.0816 },
+  { seed: 'SCNECM', difficulty: 0.102 },
+  { seed: 'SKHZ4V', difficulty: 0.1224 },
+  { seed: 'SSCLV6', difficulty: 0.1429 },
+  { seed: 'SZ76MF', difficulty: 0.1633 },
+  { seed: 'S82REQ', difficulty: 0.1837 },
+  { seed: 'SFWC7Y', difficulty: 0.2041 },
+  { seed: 'SNRXX9', difficulty: 0.2245 },
+  { seed: 'SVLJQJ', difficulty: 0.2449 },
+  { seed: 'S4F5GT', difficulty: 0.2653 },
+  { seed: 'SBBQ93', difficulty: 0.2857 },
+  { seed: 'SJ6A2C', difficulty: 0.3061 },
+  { seed: 'SRZVSM', difficulty: 0.3265 },
+  { seed: 'SYUGKW', difficulty: 0.3469 },
+  { seed: 'S7P3B7', difficulty: 0.3673 },
+  { seed: 'SEKN4F', difficulty: 0.3878 },
+  { seed: 'SME9UQ', difficulty: 0.4082 },
+  { seed: 'SU9TMZ', difficulty: 0.4286 },
+  { seed: 'S34EEA', difficulty: 0.449 },
+  { seed: 'SAYZ6J', difficulty: 0.4694 },
+  { seed: 'SHTLXT', difficulty: 0.4898 },
+  { seed: 'SQN7P4', difficulty: 0.5102 },
+  { seed: 'SXHSGD', difficulty: 0.5306 },
+  { seed: 'S6CD9M', difficulty: 0.551 },
+  { seed: 'SD8XZW', difficulty: 0.5714 },
+  { seed: 'SL3JS7', difficulty: 0.5918 },
+  { seed: 'STW5JG', difficulty: 0.6122 },
+  { seed: 'S2RQBR', difficulty: 0.6327 },
+  { seed: 'S9LB4Z', difficulty: 0.6531 },
+  { seed: 'SGGWUA', difficulty: 0.6735 },
+  { seed: 'SPBHMK', difficulty: 0.6939 },
+  { seed: 'SW63DU', difficulty: 0.7143 },
+  { seed: 'S5ZN64', difficulty: 0.7347 },
+  { seed: 'SCV9WD', difficulty: 0.7551 },
+  { seed: 'SKQUPN', difficulty: 0.7755 },
+  { seed: 'SSKFGX', difficulty: 0.7959 },
+  { seed: 'SZE287', difficulty: 0.8163 },
+  { seed: 'S89LZG', difficulty: 0.8367 },
+  { seed: 'SF57RR', difficulty: 0.8571 },
+  { seed: 'SNYSJ2', difficulty: 0.8776 },
+  { seed: 'SVTDBB', difficulty: 0.898 },
+  { seed: 'S4NY3K', difficulty: 0.9184 },
+  { seed: 'SBJKUU', difficulty: 0.9388 },
+  { seed: 'SJD6L5', difficulty: 0.9592 },
+  { seed: 'SR8QDE', difficulty: 0.9796 },
+  { seed: 'SY3B6N', difficulty: 1 },
+];
+
 // ---------------------------------------------------------------- layout
 
 function layout(g) {
@@ -77,9 +138,17 @@ const labelW = (str) => String(str).length * (Type.label * 0.6 + Type.label * 0.
 
 const seq = new Sequencer(Sound);
 
+// Set right before g.restart() so init() knows whether this run is a Campaign
+// stage (and at what difficulty) or an ordinary free-play seed. Cleared on read.
+let pendingStage = null;
+
+function clampUnlocked(n) { return clamp(Math.round(n) || 1, 1, STAGES.length); }
+
 function init(g) {
-  const seed = String(g.seed || START_SEED).toUpperCase();
-  const sim = makeSim(seed);
+  const stage = pendingStage; pendingStage = null;
+  const seed = String((stage ? stage.entry.seed : g.seed) || START_SEED).toUpperCase();
+  const difficulty = stage ? stage.entry.difficulty : 0;
+  const sim = makeSim(seed, difficulty);
   let lo = Infinity, hi = -Infinity;
   for (const n of sim.song.notes) {
     if (n.kind !== 'lead') continue;
@@ -91,7 +160,7 @@ function init(g) {
     seed,
     sim,
     synth: seq,
-    phase: 'intro',          // intro | play | over | win
+    phase: 'intro',          // intro | select | play | over | win
     leadLo: lo, leadHi: hi,
     seedEdit: false,
     seedBuf: '',
@@ -103,6 +172,12 @@ function init(g) {
     best: Store.get('best', 0),
     seedBest: Store.get('seed:' + seed, 0),
     muted: Sound.muted,
+    // --- Campaign
+    campaign: stage ? stage.index : -1,          // -1 = free play, else index into STAGES
+    unlocked: clampUnlocked(Store.get('campaignUnlocked', 1)),
+    stageBest: stage ? Store.get('stageBest:' + stage.index, 0) : 0,
+    selectIdx: clamp(clampUnlocked(Store.get('campaignUnlocked', 1)) - 1, 0, STAGES.length - 1),
+    justUnlocked: false,
   };
 }
 
@@ -115,7 +190,21 @@ function startAudio(s) {
 
 function restartRun(g, seed) {
   seq.stop();
+  pendingStage = null; // free-play restart always clears any pending campaign launch
   g.restart(seed === undefined ? g.seed : String(seed).toUpperCase());
+  const s = g.state;
+  s.phase = 'play';
+  s.hint = 4;
+  startAudio(s);
+}
+
+/** Launch Campaign stage `index` (0-based). Must be <= state.unlocked - 1. */
+function startStage(g, index) {
+  const entry = STAGES[index];
+  if (!entry) return;
+  seq.stop();
+  pendingStage = { index, entry };
+  g.restart(entry.seed);
   const s = g.state;
   s.phase = 'play';
   s.hint = 4;
@@ -141,12 +230,28 @@ function seedTyping(s, g) {
   return false;
 }
 
+/** Campaign stage-select screen: left/right/up/down move the cursor, ESC backs out. */
+function selectUpdate(s, dt, g) {
+  const I = g.input;
+  const cols = 10;
+  if (I.justPressed('left')) s.selectIdx = Math.max(0, s.selectIdx - 1);
+  if (I.justPressed('right')) s.selectIdx = Math.min(s.unlocked - 1, s.selectIdx + 1);
+  if (I.justPressed('up')) s.selectIdx = Math.max(0, s.selectIdx - cols);
+  if (I.justPressed('down')) s.selectIdx = Math.min(s.unlocked - 1, s.selectIdx + cols);
+  if (I.justPressed('esc')) { s.phase = 'intro'; return; }
+  if (I.justPressed('space') || I.justPressed('enter') || I.pointerPressed) {
+    startStage(g, clamp(s.selectIdx, 0, s.unlocked - 1));
+  }
+}
+
 function update(s, dt, g) {
   const I = g.input;
   if (s.copied > 0) s.copied -= dt;
   if (s.hint > 0) s.hint -= dt;
 
   if (s.seedEdit) { seedTyping(s, g); return; }
+
+  if (s.phase === 'select') { selectUpdate(s, dt, g); return; }
 
   // --- seed controls, live in every phase
   if (I.justPressed('s')) {
@@ -161,6 +266,11 @@ function update(s, dt, g) {
     try { navigator.clipboard && navigator.clipboard.writeText(s.seed); } catch { /* denied */ }
   }
   if (I.justPressed('m')) { s.muted = !s.muted; Sound.setMuted(s.muted); }
+  if (I.justPressed('l') && (s.phase === 'intro' || s.phase === 'over' || s.phase === 'win')) {
+    s.phase = 'select';
+    s.selectIdx = clamp(s.campaign >= 0 ? s.campaign : s.unlocked - 1, 0, STAGES.length - 1);
+    return;
+  }
 
   if (s.phase === 'intro') {
     if (I.justPressed('space') || I.justPressed('enter') || I.pointerPressed || I.justPressed('up')) {
@@ -173,7 +283,12 @@ function update(s, dt, g) {
 
   if (s.phase === 'over' || s.phase === 'win') {
     s.overT += dt;
-    if (I.justPressed('space') || I.justPressed('enter') || I.pointerPressed) { restartRun(g, s.seed); }
+    if (I.justPressed('esc') && s.campaign >= 0) { s.phase = 'intro'; return; }
+    if (I.justPressed('space') || I.justPressed('enter') || I.pointerPressed) {
+      if (s.campaign >= 0 && s.phase === 'win' && s.campaign + 1 < STAGES.length) startStage(g, s.campaign + 1);
+      else if (s.campaign >= 0) startStage(g, s.campaign);
+      else restartRun(g, s.seed);
+    }
     return;
   }
 
@@ -229,6 +344,7 @@ function update(s, dt, g) {
     Store.best('seed:' + s.seed, sim.score);
     s.best = Store.get('best', 0);
     s.seedBest = Store.get('seed:' + s.seed, 0);
+    if (s.campaign >= 0) Store.best('stageBest:' + s.campaign, sim.score);
   } else if (sim.won && s.phase === 'play') {
     s.phase = 'win'; s.overT = 0;
     Sound.ok();
@@ -237,6 +353,13 @@ function update(s, dt, g) {
     s.best = Store.get('best', 0);
     s.seedBest = Store.get('seed:' + s.seed, 0);
     Store.set('cleared', Store.get('cleared', 0) + 1);
+    if (s.campaign >= 0) {
+      Store.best('stageBest:' + s.campaign, sim.score);
+      s.stageBest = Store.get('stageBest:' + s.campaign, 0);
+      const next = clampUnlocked(s.campaign + 2); // stage index+1 is now reachable (1-based unlock count)
+      s.justUnlocked = Store.best('campaignUnlocked', next);
+      s.unlocked = clampUnlocked(Store.get('campaignUnlocked', 1));
+    }
   }
 }
 
@@ -699,9 +822,16 @@ function drawHud(s, ctx, g, L) {
   // important stat first when the two clusters would collide.
   let rx = g.w - 18;
   const seedSize = compact ? Type.body : Type.value;
-  const seedLabel = T('SEED', '种子');
-  stat(ctx, rx, 20, seedLabel, s.seed, { align: 'right', color: Palette.accent, valueSize: seedSize });
-  rx -= Math.max(mw(s.seed, seedSize), labelW(seedLabel)) + 26;
+  if (s.campaign >= 0) {
+    const stageLabel = T('STAGE', '关卡');
+    const stageV = `${s.campaign + 1}/${STAGES.length}`;
+    stat(ctx, rx, 20, stageLabel, stageV, { align: 'right', color: Palette.accent, valueSize: seedSize });
+    rx -= Math.max(mw(stageV, seedSize), labelW(stageLabel)) + 26;
+  } else {
+    const seedLabel = T('SEED', '种子');
+    stat(ctx, rx, 20, seedLabel, s.seed, { align: 'right', color: Palette.accent, valueSize: seedSize });
+    rx -= Math.max(mw(s.seed, seedSize), labelW(seedLabel)) + 26;
+  }
 
   const bpmV = String(song.bpm);
   const bpmLabel = T('BPM', 'BPM');
@@ -754,6 +884,64 @@ function drawHud(s, ctx, g, L) {
   if (s.muted) text(ctx, T('MUTED', '已静音'), 18, g.h - 20, { size: Type.micro, color: Palette.dim });
 }
 
+/** Campaign stage-select grid: unlocked stages are tappable tiles, locked ones dim. */
+function drawSelect(s, ctx, g, L) {
+  const cx = g.w / 2;
+  ctx.save();
+  ctx.fillStyle = 'rgba(7,8,13,0.9)';
+  ctx.fillRect(0, 0, g.w, g.h);
+  ctx.restore();
+
+  text(ctx, T('CAMPAIGN', '战役'), cx, L.hudH + 46, {
+    size: Type.big, color: Palette.accent, align: 'center', weight: 700,
+  });
+  text(ctx, T(`${s.unlocked}/${STAGES.length} unlocked`, `已解锁 ${s.unlocked}/${STAGES.length}`), cx, L.hudH + 72, {
+    size: Type.small, color: Palette.dim, align: 'center',
+  });
+
+  const cols = Math.min(10, Math.max(5, Math.floor((g.w - 40) / 64)));
+  const cell = Math.min(58, Math.floor((g.w - 40) / cols));
+  const rows = Math.ceil(STAGES.length / cols);
+  const gridW = cols * cell;
+  const gridH = rows * cell;
+  const x0 = cx - gridW / 2;
+  const y0 = Math.min(L.hudH + 100, g.h - gridH - 60);
+
+  for (let i = 0; i < STAGES.length; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = x0 + col * cell + cell / 2;
+    const y = y0 + row * cell + cell / 2;
+    const unlocked = i < s.unlocked;
+    const sel = i === s.selectIdx;
+    const r = cell * 0.38;
+    ctx.save();
+    ctx.globalAlpha = unlocked ? 1 : 0.32;
+    ctx.fillStyle = sel ? Palette.accent : (unlocked ? Palette.panel : Palette.dim);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.fill();
+    if (sel) {
+      ctx.strokeStyle = Palette.ink;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.fillStyle = sel ? Palette.bg : Palette.ink;
+    ctx.restore();
+    text(ctx, String(i + 1), x, y + 5, {
+      size: Type.small, color: sel ? Palette.bg : (unlocked ? Palette.ink : Palette.dim),
+      align: 'center', weight: 700,
+    });
+  }
+
+  const cur = STAGES[s.selectIdx];
+  const curBest = Store.get('stageBest:' + s.selectIdx, 0);
+  text(ctx, T(`STAGE ${s.selectIdx + 1}  ·  difficulty ${Math.round(cur.difficulty * 100)}%  ·  best ${curBest}`,
+    `第 ${s.selectIdx + 1} 关  ·  难度 ${Math.round(cur.difficulty * 100)}%  ·  最佳 ${curBest}`),
+    cx, y0 + gridH + 30, { size: Type.body, color: Palette.ink, align: 'center' });
+  text(ctx, T('ARROWS move  ·  SPACE play  ·  ESC back', '方向键移动  ·  SPACE 开始  ·  ESC 返回'),
+    cx, y0 + gridH + 54, { size: Type.small, color: Palette.dim, align: 'center' });
+}
+
 function drawOverlays(s, ctx, g, L) {
   const u = L.u;
   const cx = g.w / 2;
@@ -775,9 +963,10 @@ function drawOverlays(s, ctx, g, L) {
           `种子 ${s.seed}  ·  ${song.bpm} BPM  ·  ${song.key} ${song.scale}`),
         T(`${song.notes.length} notes  ·  ${sim.chart.length} obstacles  ·  ${Math.round(song.duration)}s`,
           `${song.notes.length} 个音符  ·  ${sim.chart.length} 个障碍  ·  ${Math.round(song.duration)} 秒`),
-        T('S seed  ·  N re-roll  ·  C copy  ·  R restart  ·  M mute', 'S 输入种子  ·  N 换一个  ·  C 复制  ·  R 重开  ·  M 静音'),
+        T(`L Campaign (${s.unlocked}/${STAGES.length} unlocked)  ·  S seed  ·  N re-roll  ·  C copy  ·  R restart  ·  M mute`,
+          `L 战役 (已解锁 ${s.unlocked}/${STAGES.length})  ·  S 输入种子  ·  N 换一个  ·  C 复制  ·  R 重开  ·  M 静音`),
       ],
-      prompt: T('PRESS SPACE', '按空格键开始'),
+      prompt: T('PRESS SPACE  ·  L for Campaign', '按空格键开始  ·  按 L 进入战役'),
       t: s.introT,
       accent: Palette.accent,
     });
@@ -787,20 +976,29 @@ function drawOverlays(s, ctx, g, L) {
     const won = s.phase === 'win';
     const total = sim.perfect + sim.good + sim.missed;
     const acc = total ? Math.round((sim.perfect / total) * 100) : 0;
+    const inCampaign = s.campaign >= 0;
+    const stageLabel = inCampaign
+      ? T(`STAGE ${s.campaign + 1}/${STAGES.length}`, `第 ${s.campaign + 1}/${STAGES.length} 关`)
+      : null;
     // The three leading blank lines reserve the slot the score figure lands in.
     titleCard(ctx, g, {
       title: won ? T('TRACK CLEARED', '曲目通关') : T('RUN ENDED', '本局结束'),
-      tagline: null,
+      tagline: stageLabel,
       lines: [
         '', '', '',
         T(`${sim.perfect} PERFECT  ·  ${sim.good} GOOD  ·  ${sim.missed} MISSED  ·  ${acc}%`,
           `${sim.perfect} 完美  ·  ${sim.good} 良好  ·  ${sim.missed} 失误  ·  ${acc}%`),
         T(`BEST COMBO ${sim.maxCombo}  ·  ${sim.cleared}/${sim.chart.length} OBSTACLES CLEARED`,
           `最高连击 ${sim.maxCombo}  ·  已通过 ${sim.cleared}/${sim.chart.length} 个障碍`),
-        T(`SEED ${s.seed}  ·  BEST ${Math.max(s.seedBest, sim.score)}  ·  ALL-TIME ${Math.max(s.best, sim.score)}`,
-          `种子 ${s.seed}  ·  本种子最佳 ${Math.max(s.seedBest, sim.score)}  ·  历史最佳 ${Math.max(s.best, sim.score)}`),
+        inCampaign
+          ? T(`SEED ${s.seed}  ·  STAGE BEST ${Math.max(s.stageBest, sim.score)}${won && s.justUnlocked && s.campaign + 1 < STAGES.length ? '  ·  NEXT STAGE UNLOCKED' : ''}`,
+            `种子 ${s.seed}  ·  本关最佳 ${Math.max(s.stageBest, sim.score)}${won && s.justUnlocked && s.campaign + 1 < STAGES.length ? '  ·  已解锁下一关' : ''}`)
+          : T(`SEED ${s.seed}  ·  BEST ${Math.max(s.seedBest, sim.score)}  ·  ALL-TIME ${Math.max(s.best, sim.score)}`,
+            `种子 ${s.seed}  ·  本种子最佳 ${Math.max(s.seedBest, sim.score)}  ·  历史最佳 ${Math.max(s.best, sim.score)}`),
       ],
-      prompt: T('SPACE retry  ·  N new seed  ·  S type a seed  ·  C copy', 'SPACE 重试  ·  N 换种子  ·  S 输入种子  ·  C 复制'),
+      prompt: inCampaign
+        ? T('SPACE next  ·  L stage select  ·  ESC free play', 'SPACE 下一关  ·  L 选关  ·  ESC 自由模式')
+        : T('SPACE retry  ·  N new seed  ·  S type a seed  ·  C copy  ·  L Campaign', 'SPACE 重试  ·  N 换种子  ·  S 输入种子  ·  C 复制  ·  L 战役'),
       t: s.introT,
       accent: won ? Palette.accent : Palette.hot,
     });
@@ -808,6 +1006,8 @@ function drawOverlays(s, ctx, g, L) {
       align: 'center', valueSize: Type.big, color: won ? Palette.accent : Palette.ink,
     });
   }
+
+  if (s.phase === 'select') drawSelect(s, ctx, g, L);
 
   if (s.seedEdit) {
     ctx.save();
@@ -1005,8 +1205,65 @@ registerSelftest('pulse', (check, log) => {
     Sound.ctx === audioBefore && !seq.playing,
     `Sound.ctx=${Sound.ctx ? 'pre-existing' : 'null'} synth.playing=${seq.playing}`);
 
+  // 11 — Campaign: exactly 50 fixed stages, escalating difficulty, all provably fair
+  check('Campaign has exactly 50 stages', STAGES.length === 50, `${STAGES.length} stages`);
+  let stageMono = true;
+  for (let i = 1; i < STAGES.length; i++) if (STAGES[i].difficulty < STAGES[i - 1].difficulty) stageMono = false;
+  check('Campaign difficulty escalates monotonically stage to stage', stageMono);
+
+  let stageFair = 0, stageBeaten = 0, stageDied = 0, stageDet = 0, stageFinite = 0;
+  const stageFailures = [];
+  for (let i = 0; i < STAGES.length; i++) {
+    const st = STAGES[i];
+    const songX = compose(st.seed, st.difficulty);
+    const songY = compose(st.seed, st.difficulty);
+    if (JSON.stringify(songX.notes) === JSON.stringify(songY.notes)
+      && JSON.stringify(songX.chart) === JSON.stringify(songY.chart)) stageDet++;
+    else stageFailures.push(`#${i} not deterministic`);
+
+    const v = verifyChart(songX.chart);
+    if (v.ok) stageFair++; else stageFailures.push(`#${i} unfair: ${v.problems[0]}`);
+
+    const won = autoRun(st.seed, { difficulty: st.difficulty });
+    if (won.won && won.hits === 0 && won.missed === 0) stageBeaten++;
+    else stageFailures.push(`#${i} not bot-cleared`);
+
+    const lost = idleRun(st.seed, { difficulty: st.difficulty });
+    if (lost.dead) stageDied++; else stageFailures.push(`#${i} idle survived`);
+
+    const fin = allFinite({ notes: songX.notes, chart: songX.chart });
+    if (fin.ok) stageFinite++; else stageFailures.push(`#${i} non-finite`);
+  }
+  check('all 50 Campaign stages pass the fairness verifier', stageFair === 50,
+    `${stageFair}/50${stageFailures.length ? ' · ' + stageFailures.slice(0, 2).join(' | ') : ''}`);
+  check('all 50 Campaign stages are bot-clearable with zero hits/misses', stageBeaten === 50, `${stageBeaten}/50`);
+  check('all 50 Campaign stages kill an idle (no-input) run', stageDied === 50, `${stageDied}/50`);
+  check('all 50 Campaign stages are deterministic', stageDet === 50, `${stageDet}/50`);
+  check('all 50 Campaign stages are allFinite', stageFinite === 50, `${stageFinite}/50`);
+
+  // 12 — Campaign progression + unlock persistence, driven through the real boot()ed game
+  Store.set('campaignUnlocked', 1);
+  Store.set('stageBest:0', 0);
+  pendingStage = { index: 0, entry: STAGES[0] };
+  game.restart(STAGES[0].seed);
+  game.state.noAudio = true;
+  game.state.phase = 'play';
+  const gs = game.state;
+  check('starting stage 1 sets state.campaign correctly', gs.campaign === 0 && gs.sim.song.difficulty === STAGES[0].difficulty,
+    `campaign=${gs.campaign} songDiff=${gs.sim.song.difficulty}`);
+  // Drive the LIVE sim object to completion with the same scripted optimal player
+  // autoRun() already proved fair on every stage — autoRun accepts a sim in place
+  // of a seed and mutates it directly — then let one real game.step() notice
+  // sim.won and run the game's own phase-transition + unlock-persistence logic.
+  autoRun(gs.sim);
+  game.step(1);
+  check('a bot-cleared live Campaign stage 1 unlocks stage 2',
+    gs.phase === 'win' && gs.unlocked >= 2 && Store.get('campaignUnlocked', 1) >= 2,
+    `phase=${gs.phase} unlocked=${gs.unlocked} stored=${Store.get('campaignUnlocked', 1)}`);
+  check('unlock persistence never exceeds the stage count', Store.get('campaignUnlocked', 1) <= STAGES.length);
+
   game.restart(START_SEED);
-  log(`seeds tested: ${N} · ${a.bpm}bpm ${a.key} ${a.scale} · notes=${a.notes.length} chart=${a.chart.length}`);
+  log(`seeds tested: ${N} · campaign stages: 50 · ${a.bpm}bpm ${a.key} ${a.scale} · notes=${a.notes.length} chart=${a.chart.length}`);
 });
 
 // dev console handles

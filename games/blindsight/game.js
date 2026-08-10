@@ -18,6 +18,7 @@ import {
   mapFromRows, bfsField, faceIndex, castRay, hasLOS, tileOf,
   FACE_N, FACE_E, FACE_S, FACE_W,
 } from './sim.js';
+import { STAGES } from './stages.js';
 
 // ---------------------------------------------------------------- palette
 
@@ -50,10 +51,14 @@ function freshSeed() {
 function init(g) {
   const seed = typeof g.seed === 'string' && g.seed.length >= 3 ? g.seed : freshSeed();
   g.seed = seed;
+  const maxStage = clamp(Store.get('maxStage', 0), 0, STAGES.length - 1);
   return {
     seedStr: seed,
     sim: makeSim(seed),
-    phase: 'intro',        // intro | play | caught | won
+    mode: 'campaign',       // campaign | free
+    phase: 'select',        // select | intro | play | caught | won
+    stageIndex: maxStage,
+    maxStage,
     view: null,
     flash: 0,
     endT: 0,
@@ -78,6 +83,30 @@ function resetRun(s, g, seed) {
   s.hintT = 4;
   FX.reset();
   Store.set('lastSeed', seed);
+}
+
+/** Start a fixed Campaign stage: the seed and every difficulty lever come from
+ * STAGES[idx] (see stages.js) — same makeSim()/stepSim() as free play, just with
+ * the maze/hunter opts pinned instead of generated from a typed seed. */
+function startStage(s, g, idx) {
+  const st = STAGES[clamp(idx, 0, STAGES.length - 1)];
+  g.seed = st.seed;
+  s.seedStr = st.seed;
+  s.mode = 'campaign';
+  s.stageIndex = st.n - 1;
+  s.sim = makeSim(st.seed, {
+    cols: st.cols, rows: st.rows, shardCount: st.shardCount,
+    hunterSpeedMul: st.hunterSpeedMul, hearMul: st.hearMul,
+    pingCoolMul: st.pingCoolMul, dreadMul: st.dreadMul,
+  });
+  s.phase = 'play';
+  s.flash = 0;
+  s.endT = 0;
+  s.beat = 0;
+  s.aimT = 0;
+  s.hintT = 4;
+  FX.reset();
+  Store.set('lastSeed', st.seed);
 }
 
 // ---------------------------------------------------------------- view transform
@@ -240,12 +269,29 @@ function update(s, dt, g) {
   s.flash = Math.max(0, s.flash - dt * 2.6);
   if (s.hintT > 0) s.hintT -= dt;
 
+  if (s.phase === 'select') {
+    const I = g.input;
+    if (I.justPressed('left') || I.justPressed('a')) s.stageIndex = clamp(s.stageIndex - 1, 0, s.maxStage);
+    if (I.justPressed('right') || I.justPressed('d')) s.stageIndex = clamp(s.stageIndex + 1, 0, s.maxStage);
+    if (I.justPressed('space') || I.justPressed('enter') || I.pointerPressed) {
+      Sound.init(); Sound.resume();
+      startStage(s, g, s.stageIndex);
+    }
+    if (I.justPressed('f')) {
+      Sound.init(); Sound.resume();
+      s.mode = 'free';
+      s.phase = 'intro';
+    }
+    return;
+  }
+
   if (s.phase === 'intro') {
     if (g.input.justPressed('space') || g.input.justPressed('enter') || g.input.pointerPressed) {
       Sound.init(); Sound.resume();
       resetRun(s, g, s.seedStr);
     }
     if (g.input.justPressed('n')) { s.seedStr = randomSeedString(6); s.sim = makeSim(s.seedStr); }
+    if (g.input.justPressed('c')) { s.mode = 'campaign'; s.phase = 'select'; }
     return;
   }
 
@@ -255,18 +301,28 @@ function update(s, dt, g) {
     stepSim(s.sim, { mx: 0, my: 0, ping: null }, dt);
     drainFx(s, g);
     if (s.endT > 0.35) {
-      if (g.input.justPressed('r') || g.input.justPressed('space') || g.input.justPressed('enter')) {
-        resetRun(s, g, s.seedStr);
-      } else if (g.input.justPressed('n')) {
-        resetRun(s, g, randomSeedString(6));
+      if (s.mode === 'campaign') {
+        if (g.input.justPressed('space') || g.input.justPressed('enter')) { s.phase = 'select'; return; }
+        if (g.input.justPressed('r')) { startStage(s, g, s.stageIndex); return; }
+        if (g.input.justPressed('n')) { s.phase = 'select'; return; }
+      } else {
+        if (g.input.justPressed('r') || g.input.justPressed('space') || g.input.justPressed('enter')) {
+          resetRun(s, g, s.seedStr);
+        } else if (g.input.justPressed('n')) {
+          resetRun(s, g, randomSeedString(6));
+        }
       }
     }
     return;
   }
 
   // --- playing
-  if (g.input.justPressed('r')) { resetRun(s, g, s.seedStr); return; }
-  if (g.input.justPressed('n')) { resetRun(s, g, randomSeedString(6)); return; }
+  if (s.mode === 'campaign') {
+    if (g.input.justPressed('r')) { startStage(s, g, s.stageIndex); return; }
+  } else {
+    if (g.input.justPressed('r')) { resetRun(s, g, s.seedStr); return; }
+    if (g.input.justPressed('n')) { resetRun(s, g, randomSeedString(6)); return; }
+  }
 
   updateAim(g, s, dt);
   stepSim(s.sim, readIntent(g, s), dt);
@@ -274,7 +330,13 @@ function update(s, dt, g) {
   heartbeat(s, dt);
 
   if (s.sim.dead) { s.phase = 'caught'; s.endT = 0; s.flash = 1; recordResult(s); }
-  else if (s.sim.won) { s.phase = 'won'; s.endT = 0; recordResult(s); }
+  else if (s.sim.won) {
+    s.phase = 'won'; s.endT = 0; recordResult(s);
+    if (s.mode === 'campaign') {
+      s.maxStage = clamp(Math.max(s.maxStage, Math.min(STAGES.length - 1, s.stageIndex + 1)), 0, STAGES.length - 1);
+      Store.set('maxStage', s.maxStage);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- render
@@ -576,9 +638,15 @@ function drawHud(ctx, s, g) {
     color: Palette.ink, valueSize: vs,
   });
 
-  stat(ctx, g.w - 18, HUD_LABEL_Y, T('seed', '种子'), s.seedStr, {
-    align: 'right', valueSize: vs2, color: Palette.dim,
-  });
+  if (s.mode === 'campaign') {
+    stat(ctx, g.w - 18, HUD_LABEL_Y, T('stage', '关卡'), `${s.stageIndex + 1}/${STAGES.length}`, {
+      align: 'right', valueSize: vs2, color: Palette.dim,
+    });
+  } else {
+    stat(ctx, g.w - 18, HUD_LABEL_Y, T('seed', '种子'), s.seedStr, {
+      align: 'right', valueSize: vs2, color: Palette.dim,
+    });
+  }
   if (!compact) {
     const bt = Store.get('time:' + s.seedStr, null);
     stat(ctx, g.w - 122, HUD_LABEL_Y, T('best', '最佳'), bt === null ? '—' : fmtTime(bt), {
@@ -657,6 +725,7 @@ function drawIntro(ctx, s, g) {
           'WASD / 方向键 移动   ·   SPACE 响波   ·   F 静音锥波   ·   SHIFT 潜行'),
         T(`R restart seed   ·   N new seed   ·   SEED ${s.seedStr}`,
           `R 重开本局   ·   N 新种子   ·   种子 ${s.seedStr}`),
+        T('C  campaign — 50 fixed stages', 'C  战役模式 — 50 个固定关卡'),
       ],
     prompt: T('PRESS SPACE', '按空格键开始'),
     t: g.t,
@@ -669,11 +738,19 @@ function drawEnd(ctx, s, g) {
   const won = s.phase === 'won';
   const a = clamp(s.endT / 0.5, 0, 1);
   const bt = Store.get('time:' + s.seedStr, null);
+  const campaign = s.mode === 'campaign';
   const lines = [T(
-    `${s.sim.collected}/${s.sim.shards.length} shards  ·  seed ${s.seedStr}`,
-    `${s.sim.collected}/${s.sim.shards.length} 碎片  ·  种子 ${s.seedStr}`,
+    campaign
+      ? `${s.sim.collected}/${s.sim.shards.length} shards  ·  stage ${s.stageIndex + 1}/${STAGES.length}`
+      : `${s.sim.collected}/${s.sim.shards.length} shards  ·  seed ${s.seedStr}`,
+    campaign
+      ? `${s.sim.collected}/${s.sim.shards.length} 碎片  ·  第 ${s.stageIndex + 1}/${STAGES.length} 关`
+      : `${s.sim.collected}/${s.sim.shards.length} 碎片  ·  种子 ${s.seedStr}`,
   )];
   if (bt !== null) lines.push(T(`best on this seed  ${fmtTime(bt)}`, `本种子最佳  ${fmtTime(bt)}`));
+  if (campaign && won && s.stageIndex >= STAGES.length - 1) {
+    lines.push(T('CAMPAIGN COMPLETE', '全部通关'));
+  }
 
   ctx.save();
   ctx.globalAlpha = a;
@@ -681,21 +758,59 @@ function drawEnd(ctx, s, g) {
     title: won ? T('ESCAPED', '逃脱成功') : T('CAUGHT', '被抓住了'),
     tagline: won ? fmtTime(s.sim.time) : T(`survived ${fmtTime(s.sim.time)}`, `坚持了 ${fmtTime(s.sim.time)}`),
     lines,
-    prompt: a > 0.9 ? T('SPACE / R  retry seed      N  new seed', 'SPACE / R  重试本种子      N  新种子') : null,
+    prompt: a > 0.9
+      ? (campaign
+        ? T('SPACE / N  stage select      R  retry stage', 'SPACE / N  选关      R  重试本关')
+        : T('SPACE / R  retry seed      N  new seed', 'SPACE / R  重试本种子      N  新种子'))
+      : null,
     t: g.t,
     accent: won ? Palette.accent : Palette.hot,
   });
   ctx.restore();
 }
 
-function render(s, ctx, g) {
-  const v = computeView(g, s.sim);
-  s.view = v;
+/** Campaign stage select: a horizontal strip you page through with LEFT/RIGHT,
+ * showing the difficulty preview for the highlighted stage. Only stages up to
+ * maxStage are pickable — s.stageIndex is already clamped there in update(). */
+function drawSelect(ctx, s, g) {
+  const st = STAGES[s.stageIndex];
+  const compact = g.w < 760;
+  const locked = s.stageIndex > s.maxStage;
 
+  titleCard(ctx, g, {
+    title: T('BLINDSIGHT — CAMPAIGN', '盲视 — 战役'),
+    tagline: T(`Stage ${st.n} of ${STAGES.length}`, `第 ${st.n} / ${STAGES.length} 关`),
+    lines: [
+      T(`${st.shardCount} shards  ·  maze ${st.cols}×${st.rows}  ·  hunter speed ${(st.hunterSpeedMul * 100) | 0}%`,
+        `${st.shardCount} 碎片  ·  迷宫 ${st.cols}×${st.rows}  ·  猎手速度 ${(st.hunterSpeedMul * 100) | 0}%`),
+      T(`hearing ${(st.hearMul * 100) | 0}%  ·  ping cooldown ${(st.pingCoolMul * 100) | 0}%  ·  dread ${(st.dreadMul * 100) | 0}%`,
+        `听力 ${(st.hearMul * 100) | 0}%  ·  声波冷却 ${(st.pingCoolMul * 100) | 0}%  ·  恐惧 ${(st.dreadMul * 100) | 0}%`),
+      compact
+        ? T('LEFT/RIGHT pick   ·   SPACE start   ·   F free play', '左右选关   ·   SPACE 开始   ·   F 自由模式')
+        : T('LEFT / RIGHT pick a stage   ·   SPACE start   ·   F free-play seeds instead',
+          '左右方向键选关   ·   SPACE 开始   ·   F 改用自由模式'),
+      T(`unlocked ${s.maxStage + 1}/${STAGES.length}`, `已解锁 ${s.maxStage + 1}/${STAGES.length}`),
+    ],
+    prompt: locked ? T('LOCKED', '未解锁') : T('PRESS SPACE', '按空格键开始'),
+    t: g.t,
+    accent: locked ? Palette.dim : Palette.accent,
+  });
+  introSweep(ctx, g, g.t);
+}
+
+function render(s, ctx, g) {
   ctx.save();
   ctx.fillStyle = VOID;
   ctx.fillRect(0, 0, g.w, g.h);
   ctx.restore();
+
+  if (s.phase === 'select') {
+    drawSelect(ctx, s, g);
+    return;
+  }
+
+  const v = computeView(g, s.sim);
+  s.view = v;
 
   // The playfield is clipped to the band below the strip, so nothing the maze
   // throws outward (rings, halos, particles) can ever paint over the HUD.
@@ -938,9 +1053,78 @@ registerSelftest('blindsight', (check, log) => {
   check('different seeds build different mazes',
     b1.map.solid.join(',') !== b2.map.solid.join(','));
 
+  // ---- 10. CAMPAIGN: the 50-stage table is well-formed and every stage is
+  // genuinely playable on the real sim (this re-checks a subset of what the
+  // throwaway authoring script already proved for the full 50 — see stages.js).
+  check('STAGES has exactly 50 entries, numbered 1..50, all seeds unique',
+    STAGES.length === 50
+    && STAGES.every((st, i) => st.n === i + 1)
+    && new Set(STAGES.map((st) => st.seed)).size === STAGES.length,
+    `n=${STAGES.length}`);
+
+  check('difficulty escalates monotonically stage 1 -> 50 (hunter speed, hearing, ping cooldown, dread)',
+    STAGES[0].hunterSpeedMul < STAGES[49].hunterSpeedMul
+    && STAGES[0].hearMul < STAGES[49].hearMul
+    && STAGES[0].pingCoolMul < STAGES[49].pingCoolMul
+    && STAGES[0].dreadMul < STAGES[49].dreadMul
+    && STAGES[0].shardCount <= STAGES[49].shardCount,
+    `stage1=${JSON.stringify(STAGES[0])} stage50=${JSON.stringify(STAGES[49])}`);
+
+  const stageBad = [];
+  let stageShardsChecked = 0;
+  for (const st of STAGES) {
+    const opts = {
+      cols: st.cols, rows: st.rows, shardCount: st.shardCount,
+      hunterSpeedMul: st.hunterSpeedMul, hearMul: st.hearMul,
+      pingCoolMul: st.pingCoolMul, dreadMul: st.dreadMul,
+    };
+    const sim = makeSim(st.seed, opts);
+    if (sim.map.tw !== st.cols * 2 + 1 || sim.map.th !== st.rows * 2 + 1) stageBad.push(st.n + ':size');
+    if (sim.shards.length !== st.shardCount) stageBad.push(st.n + ':shardCount');
+    if (sim.hunterSpeedMul !== st.hunterSpeedMul || sim.hearMul !== st.hearMul
+      || sim.pingCoolMul !== st.pingCoolMul || sim.dreadMul !== st.dreadMul) stageBad.push(st.n + ':mulNotApplied');
+    const sp = tileAt(sim, sim.player.x, sim.player.y);
+    if (sim.map.solid[sp.ty * sim.tw + sp.tx]) { stageBad.push(st.n + ':spawn-in-wall'); continue; }
+    const field = bfsField(sim.map, sp.tx, sp.ty);
+    const reach = (x, y) => { const t = tileAt(sim, x, y); return field[t.ty * sim.tw + t.tx] >= 0; };
+    for (const sh of sim.shards) { stageShardsChecked++; if (!reach(sh.x, sh.y)) stageBad.push(st.n + ':shard-unreachable'); }
+    if (!reach(sim.exit.x, sim.exit.y)) stageBad.push(st.n + ':exit-unreachable');
+    if (!sim.hunter || !reach(sim.hunter.x, sim.hunter.y)) stageBad.push(st.n + ':hunter-unreachable');
+  }
+  check('all 50 Campaign stages: opts applied + spawn/shards/exit/hunter flood-fill reachable',
+    stageBad.length === 0, stageBad.length ? stageBad.slice(0, 6).join(' ') : `${stageShardsChecked} stage-shards verified`);
+
+  // ---- 11. CAMPAIGN LIVE: stage init through startStage(), and win -> unlock
+  // persistence through Store — save/restore around it so the self-test never
+  // clobbers a real player's saved progress.
+  const savedMaxStage = Store.get('maxStage', 0);
+  const savedLastSeed = Store.get('lastSeed', null);
+
+  game.restart(game.seed);
+  startStage(game.state, game, 0);
+  check('startStage(0) enters play on STAGES[0]\'s pinned seed/opts',
+    game.state.phase === 'play' && game.state.mode === 'campaign'
+    && game.state.seedStr === STAGES[0].seed && game.state.sim.shards.length === STAGES[0].shardCount,
+    `phase=${game.state.phase} seed=${game.state.seedStr}`);
+
+  Store.set('maxStage', 0);
+  game.state.maxStage = 0;
+  for (const sh of game.state.sim.shards) { teleport(game.state.sim, sh.x, sh.y); stepSim(game.state.sim, NOP, dt); }
+  teleport(game.state.sim, game.state.sim.exit.x, game.state.sim.exit.y);
+  game.step(1);
+  check('winning a Campaign stage unlocks the next one and persists it via Store',
+    game.state.phase === 'won' && game.state.maxStage === 1 && Store.get('maxStage', -1) === 1,
+    `phase=${game.state.phase} maxStage=${game.state.maxStage} stored=${Store.get('maxStage', -1)}`);
+
+  Store.set('maxStage', savedMaxStage);
+  if (savedLastSeed !== null) Store.set('lastSeed', savedLastSeed);
+  game.input.clear();
+  game.restart(game.seed);
+
   // ---- LIVE: drive the real game through the kit's input injection
   game.restart(game.seed);
   game.state.phase = 'play';
+  game.state.mode = 'free';
   game.state.aimT = 0;
   const liveX = game.state.sim.player.x;
   game.input.press('right');
@@ -963,13 +1147,14 @@ registerSelftest('blindsight', (check, log) => {
   game.restart(game.seed);
 
   check('nothing threw', true);
-  log(`seedsChecked=${SEEDS.length} shardsPerRun=${SHARD_COUNT} tiles=${a1.tw}x${a1.th} faces=${a1.reveal.length}`);
+  log(`seedsChecked=${SEEDS.length} shardsPerRun=${SHARD_COUNT} tiles=${a1.tw}x${a1.th} faces=${a1.reveal.length} stages=${STAGES.length}`);
 });
 
 // dev console handle
 globalThis.__blindsight = {
   makeSim, stepSim, teleport, castRay, hasLOS, bfsField, mapFromRows, faceIndex,
   FACE_N, FACE_E, FACE_S, FACE_W, TILE, PING, RUN_SPEED, HUNTER_SPEED, CATCH_DIST, REVEAL_LIFE,
+  STAGES,
 };
 
 export default game;

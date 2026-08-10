@@ -20,13 +20,49 @@ const MIN_LIVE_FOR_EXTINCTION = 40;  // don't call extinction before the match h
 const REGEN_BASE = 2.2;              // biomass/sec baseline
 const REGEN_PER_CELL = 0.028;        // biomass/sec per live cell you own
 
-const LEVELS = [
-  { name: 'Spore', nameZh: '孢子', aiInterval: 3.6, aiPatterns: ['glider', 'block'], aiSkill: 0 },
-  { name: 'Colony', nameZh: '群落', aiInterval: 2.8, aiPatterns: ['glider', 'blinker', 'seed'], aiSkill: 1 },
-  { name: 'Bloom', nameZh: '绽放', aiInterval: 2.2, aiPatterns: ['glider', 'lwss', 'seed'], aiSkill: 2 },
-  { name: 'Swarm', nameZh: '蜂群', aiInterval: 1.7, aiPatterns: ['glider', 'lwss', 'gun', 'seed'], aiSkill: 3 },
-  { name: 'Hive', nameZh: '蜂巢', aiInterval: 1.2, aiPatterns: ['glider', 'lwss', 'gun', 'seed', 'blinker'], aiSkill: 4 },
+// aiSkill scales 0..MAX_AI_SKILL across the 50-level campaign (finer-grained than the old
+// 0..4 range so the curve doesn't cliff); pickAiTarget()/aiAct() normalize against this max.
+const MAX_AI_SKILL = 8;
+
+// name/nameZh pairs — single evocative words, escalating from a single spore to cosmic-scale
+// dominance. Indices 0-4 are the original Spore/Colony/Bloom/Swarm/Hive campaign, unchanged.
+const LEVEL_NAMES = [
+  ['Spore', '孢子'], ['Colony', '群落'], ['Bloom', '绽放'], ['Swarm', '蜂群'], ['Hive', '蜂巢'],
+  ['Culture', '培养'], ['Strain', '菌株'], ['Thicket', '密丛'], ['Cluster', '簇群'], ['Lattice', '晶格'],
+  ['Mycelium', '菌丝'], ['Biofilm', '生物膜'], ['Spawn', '孵生'], ['Brood', '孵群'], ['Tide', '潮涌'],
+  ['Surge', '涌动'], ['Cascade', '瀑流'], ['Legion', '军团'], ['Phalanx', '方阵'], ['Vanguard', '前锋'],
+  ['Bastion', '堡垒'], ['Citadel', '要塞'], ['Dominion', '领域'], ['Empire', '帝国'], ['Overgrowth', '蔓生'],
+  ['Contagion', '蔓延'], ['Plague', '瘟疫'], ['Blight', '枯萎'], ['Malignancy', '恶性'], ['Metastasis', '转移'],
+  ['Cataclysm', '剧变'], ['Maelstrom', '漩涡'], ['Vortex', '涡流'], ['Tempest', '风暴'], ['Wildfire', '野火'],
+  ['Inferno', '烈焰'], ['Eruption', '爆发'], ['Fracture', '断裂'], ['Rupture', '破裂'], ['Collapse', '崩塌'],
+  ['Singularity', '奇点'], ['Ascendant', '升腾'], ['Leviathan', '利维坦'], ['Behemoth', '巨兽'], ['Colossus', '巨像'],
+  ['Juggernaut', '主宰'], ['Apex', '顶点'], ['Zenith', '巅峰'], ['Omega', '欧米伽'], ['Genesis', '创世'],
 ];
+
+/** Pattern roster available to the AI at a given level index (0-based, 0..49). Grows from a
+ * bare glider/block opener to the full arsenal, with higher-value patterns duplicated into
+ * the pool at high levels so the AI's weighted random pick favors them more often. */
+function aiPatternsForLevel(i) {
+  if (i < 5) return ['glider', 'block'];
+  if (i < 10) return ['glider', 'blinker', 'seed'];
+  if (i < 18) return ['glider', 'lwss', 'seed'];
+  if (i < 26) return ['glider', 'lwss', 'gun', 'seed'];
+  if (i < 34) return ['glider', 'lwss', 'gun', 'seed', 'blinker'];
+  if (i < 42) return ['glider', 'lwss', 'lwss', 'gun', 'seed', 'blinker'];
+  return ['glider', 'lwss', 'lwss', 'gun', 'gun', 'seed', 'blinker'];
+}
+
+const LEVELS = LEVEL_NAMES.map(([name, nameZh], i) => {
+  const n = LEVEL_NAMES.length - 1; // 49
+  const t = i / n;                  // 0..1
+  // Exponential decay from 3.6s down to 0.5s — matches the original 5-level pacing at the
+  // start (3.6 -> 1.2 over the first 4 steps) and keeps easing smoothly beyond it.
+  const aiInterval = i < 5
+    ? [3.6, 2.8, 2.2, 1.7, 1.2][i]
+    : Math.max(0.5, 3.6 * Math.pow(0.5 / 3.6, t));
+  const aiSkill = i < 5 ? i : Math.min(MAX_AI_SKILL, t * MAX_AI_SKILL);
+  return { name, nameZh, aiInterval, aiPatterns: aiPatternsForLevel(i), aiSkill };
+});
 
 // ---------------------------------------------------------------- pure CA step
 
@@ -131,7 +167,7 @@ function pickAiTarget(sim) {
   const gw = sim.gw, gh = sim.gh, grid = sim.grid;
   const candidates = [];
   // Sample on a coarse stride for speed; look for empty/player cells adjacent to AI cells (the front).
-  const stride = sim.aiSkill >= 3 ? 2 : 4;
+  const stride = sim.aiSkill >= MAX_AI_SKILL * 0.75 ? 2 : 4;
   for (let y = 1; y < gh - 1; y += stride) {
     for (let x = 1; x < gw - 1; x += stride) {
       const v = grid[y * gw + x];
@@ -157,7 +193,7 @@ function pickAiTarget(sim) {
     return { x: sim.gw - 1 - sim.rng.intRange(6, 24), y: sim.rng.intRange(6, 24) };
   }
   // Weighted pick biased toward higher-weight (more contested) candidates; higher skill = less random.
-  const skillFocus = sim.aiSkill / 4; // 0..1
+  const skillFocus = sim.aiSkill / MAX_AI_SKILL; // 0..1
   if (sim.rng.bool(0.3 + skillFocus * 0.5)) {
     candidates.sort((a, b) => b.w - a.w);
     return candidates[0];
@@ -171,7 +207,7 @@ function aiAct(sim, dt) {
   sim.aiTimer = sim.aiInterval * (0.8 + sim.rng.next() * 0.4);
   const t = pickAiTarget(sim);
   const patId = sim.rng.pick(sim.aiPatterns);
-  const rot = sim.aiSkill >= 2 ? sim.rng.intRange(0, 3) : 0;
+  const rot = sim.aiSkill >= MAX_AI_SKILL * 0.5 ? sim.rng.intRange(0, 3) : 0;
   tryStamp(sim, patId, t.x, t.y, rot, 2);
 }
 

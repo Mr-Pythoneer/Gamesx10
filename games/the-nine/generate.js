@@ -745,3 +745,78 @@ export function generate(seedString, difficulty = 'officer') {
   // Unreachable — the final attempt is lenient — but never return nothing.
   return attemptGenerate(new RNG(RNG.hash(key + '|last')), tier, seedString, MAX, true);
 }
+
+// ---------------------------------------------------------------- campaign cases (ADDITION)
+//
+// A fixed, numbered 50-case Campaign. This section only ADDS exports — it does not
+// touch the clue grammar, TIERS/ATTRS/SHIP vocabulary, or solver logic above.
+//
+// Each case is a plain (seed, tierIndex) pair. generate() is already deterministic and
+// already strips every puzzle down to a minimal (no-redundant-clue) set, so a case
+// needs nothing stored beyond its seed — replaying generate(seed, tier.id) always
+// reproduces the exact same clue list. The seeds below were chosen OFFLINE by
+// searching many seed variants per case number for the one whose natural minimal
+// clue count best matches an escalating target: cases 1-15 use tier 0 (cadet) with a
+// generous clue count tapering down; 16-35 use tier 1 (officer); 36-50 use tier 2
+// (archivist) tapering down toward that tier's uniqueness-boundary minimum. Every
+// case is verified unique (exactly one solution) at generation time — see
+// registerSelftest in game.js and the throwaway verification script used to build
+// this table.
+export const CASES = [
+  { n: 1, seed: 'CASE01X1', tierIndex: 0 },
+  { n: 2, seed: 'CASE02X0', tierIndex: 0 },
+  { n: 3, seed: 'CASE03X4', tierIndex: 0 },
+  { n: 4, seed: 'CASE04X3', tierIndex: 0 },
+  { n: 5, seed: 'CASE05X21', tierIndex: 0 },
+  { n: 6, seed: 'CASE06X205', tierIndex: 0 },
+  { n: 7, seed: 'CASE07X72', tierIndex: 0 },
+  { n: 8, seed: 'CASE08X239', tierIndex: 0 },
+  { n: 9, seed: 'CASE09X2', tierIndex: 0 },
+  { n: 10, seed: 'CASE10X26', tierIndex: 0 },
+  { n: 11, seed: 'CASE11X214', tierIndex: 0 },
+  { n: 12, seed: 'CASE12X82', tierIndex: 0 },
+  { n: 13, seed: 'CASE13X93', tierIndex: 0 },
+  { n: 14, seed: 'CASE14X19', tierIndex: 0 },
+  { n: 15, seed: 'CASE15X22', tierIndex: 0 },
+  { n: 16, seed: 'CASE16X0', tierIndex: 1 },
+  { n: 17, seed: 'CASE17X13', tierIndex: 1 },
+  { n: 18, seed: 'CASE18X2', tierIndex: 1 },
+  { n: 19, seed: 'CASE19X2', tierIndex: 1 },
+  { n: 20, seed: 'CASE20X5', tierIndex: 1 },
+  { n: 21, seed: 'CASE21X7', tierIndex: 1 },
+  { n: 22, seed: 'CASE22X2', tierIndex: 1 },
+  { n: 23, seed: 'CASE23X4', tierIndex: 1 },
+  { n: 24, seed: 'CASE24X12', tierIndex: 1 },
+  { n: 25, seed: 'CASE25X14', tierIndex: 1 },
+  { n: 26, seed: 'CASE26X72', tierIndex: 1 },
+  { n: 27, seed: 'CASE27X29', tierIndex: 1 },
+  { n: 28, seed: 'CASE28X22', tierIndex: 1 },
+  { n: 29, seed: 'CASE29X90', tierIndex: 1 },
+  { n: 30, seed: 'CASE30X223', tierIndex: 1 },
+  { n: 31, seed: 'CASE31X21', tierIndex: 1 },
+  { n: 32, seed: 'CASE32X16', tierIndex: 1 },
+  { n: 33, seed: 'CASE33X106', tierIndex: 1 },
+  { n: 34, seed: 'CASE34X3', tierIndex: 1 },
+  { n: 35, seed: 'CASE35X57', tierIndex: 1 },
+  { n: 36, seed: 'CASE36X3', tierIndex: 2 },
+  { n: 37, seed: 'CASE37X6', tierIndex: 2 },
+  { n: 38, seed: 'CASE38X17', tierIndex: 2 },
+  { n: 39, seed: 'CASE39X2', tierIndex: 2 },
+  { n: 40, seed: 'CASE40X5', tierIndex: 2 },
+  { n: 41, seed: 'CASE41X12', tierIndex: 2 },
+  { n: 42, seed: 'CASE42X2', tierIndex: 2 },
+  { n: 43, seed: 'CASE43X30', tierIndex: 2 },
+  { n: 44, seed: 'CASE44X95', tierIndex: 2 },
+  { n: 45, seed: 'CASE45X1', tierIndex: 2 },
+  { n: 46, seed: 'CASE46X296', tierIndex: 2 },
+  { n: 47, seed: 'CASE47X212', tierIndex: 2 },
+  { n: 48, seed: 'CASE48X188', tierIndex: 2 },
+  { n: 49, seed: 'CASE49X158', tierIndex: 2 },
+  { n: 50, seed: 'CASE50X34', tierIndex: 2 },
+];
+
+/** Public: case N (1-based) -> its puzzle, regenerated fresh via the existing generate(). */
+export function generateCaseN(n) {
+  const c = CASES[Math.max(0, Math.min(CASES.length - 1, (n | 0) - 1))];
+  return generate(c.seed, TIERS[c.tierIndex].id);
+}

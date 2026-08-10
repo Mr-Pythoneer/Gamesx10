@@ -80,6 +80,12 @@ function manhattanTiles(map, a, b) {
  *   opts.hunterTile  — {x,y}
  *   opts.hunter      — false to omit the hunter entirely
  *   opts.shardCount  — defaults to SHARD_COUNT
+ *
+ *   Campaign difficulty levers (all default to 1, i.e. unchanged behavior):
+ *   opts.hunterSpeedMul — scales every HUNTER_SPEED tier
+ *   opts.hearMul        — scales how far a sound (ping/footstep/shard) carries
+ *   opts.pingCoolMul    — scales ping cooldown (higher = pings recharge slower)
+ *   opts.dreadMul       — scales the dread/heartbeat ramp as the hunter closes in
  */
 export function makeSim(seedString, opts = {}) {
   const seed = String(seedString);
@@ -173,6 +179,10 @@ export function makeSim(seedString, opts = {}) {
     over: false,
     dread: 0,
     fxq: [],
+    hunterSpeedMul: opts.hunterSpeedMul || 1,
+    hearMul: opts.hearMul || 1,
+    pingCoolMul: opts.pingCoolMul || 1,
+    dreadMul: opts.dreadMul || 1,
   };
 
   if (hunter) pickPatrol(sim);
@@ -262,7 +272,7 @@ function touchRing(sim, ring, o, evType) {
 function emitSound(sim, x, y, loud) {
   const h = sim.hunter;
   if (!h || loud <= 0) return;
-  const R = HEAR_BASE * loud;
+  const R = HEAR_BASE * loud * sim.hearMul;
   const d = Math.hypot(x - h.x, y - h.y);
   if (d > R) return;
 
@@ -371,6 +381,7 @@ function stepHunter(sim, dt) {
       : Math.max(0, h.alert - dt * 0.3);
 
   if (speed <= 0) return;
+  speed *= sim.hunterSpeedMul;
 
   let wx = gx, wy = gy;
   if (!hasLOS(sim.map, h.x, h.y, gx, gy)) {
@@ -489,7 +500,7 @@ export function stepSim(sim, intent = {}, dt = 1 / 60) {
   const kind = intent.ping;
   if ((kind === 'wide' || kind === 'narrow') && sim.cool[kind] <= 0) {
     emitPing(sim, kind);
-    sim.cool[kind] = PING[kind].cool;
+    sim.cool[kind] = PING[kind].cool * sim.pingCoolMul;
     const other = kind === 'wide' ? 'narrow' : 'wide';
     if (sim.cool[other] < PING_LOCKOUT) sim.cool[other] = PING_LOCKOUT;
   }
@@ -523,7 +534,7 @@ export function stepSim(sim, intent = {}, dt = 1 / 60) {
     const mapDiag = Math.hypot(sim.map.tw * TILE, sim.map.th * TILE);
     const dreadRadius = mapDiag * 0.32;
     const prox = clamp(1 - hd / dreadRadius, 0, 1);
-    sim.dread = clamp(prox * (0.55 + 0.45 * sim.hunter.alert), 0, 1);
+    sim.dread = clamp(prox * (0.55 + 0.45 * sim.hunter.alert) * sim.dreadMul, 0, 1);
   }
 
   // --- win / lose
