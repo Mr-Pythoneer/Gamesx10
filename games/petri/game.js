@@ -589,6 +589,12 @@ registerSelftest('petri', (check, log) => {
 
   // 2 + live game drive: injected pointer click stamps the selected pattern
   {
+    // boot() always repoints globalThis.__game at whatever it just created — this
+    // throwaway instance would otherwise silently orphan the real page's debug
+    // handle (the real game keeps running and rendering fine either way, since
+    // this instance never calls .draw(), but anyone poking at __game in devtools
+    // after calling __selftest() would be looking at a dead object).
+    const realGameHandle = globalThis.__game;
     const g = boot({
       id: 'petri-selftest', title: 'Petri (selftest)', seed: 'live-seed',
       init, update, render, autoStart: false,
@@ -601,13 +607,21 @@ registerSelftest('petri', (check, log) => {
     g.input.pointDown(g.w * 0.5, g.h * 0.5);
     g.step(1);
     g.input.pointUp(g.w * 0.5, g.h * 0.5);
+    // n1 is a population count only recomputed on the CA's own throttled tick
+    // (CA_STEP = 1/11s, independent of the 60fps render step), not every frame —
+    // one step(1) is ~1/60s, not enough real time for a tick to have fired yet.
+    // lastStamp already proves the write landed; step past a tick boundary (>=6
+    // frames at 1/60 each) before trusting n1 to reflect it.
+    for (let i = 0; i < 8; i++) g.step(1);
     const after = g.state.sim.n1;
+    check('injected pointer click writes the pattern into the grid', !!g.state.sim.lastStamp && g.state.sim.lastStamp.patternId === 'glider');
     check('injected pointer click stamps the selected pattern', after - before === patternCells, `before=${before} after=${after} expected+${patternCells}`);
 
     // run the live game forward a bit to make sure nothing throws through the render/update path
     for (let i = 0; i < 120; i++) g.step(1);
     const fin2 = allFinite({ biomass: g.state.sim.biomassP, pct: g.state.sim.pctP });
     check('live game runs 120+ frames without producing non-finite state', fin2.ok, JSON.stringify(fin2.bad));
+    if (realGameHandle) globalThis.__game = realGameHandle;
   }
 
   log('petri self-test complete');

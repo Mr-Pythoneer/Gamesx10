@@ -66,10 +66,13 @@ function overlapsRect(x, y, rx, ry, rw, rh) {
   return x < rx + rw && x + PW > rx && y < ry + rh && y + PH > ry;
 }
 
-// Weight detection needs to count "resting exactly on top" (box bottom == tile top,
-// the normal one-way landing case) as an overlap, not just deep interpenetration.
+// Weight detection needs to count "resting exactly on top" as an overlap. Discrete
+// per-pixel collision stepping can leave a sub-2px gap between a resting box and the
+// surface it landed on, so pad the touch test generously rather than testing for
+// mathematically exact contact.
 function overlapsRectTouch(x, y, rx, ry, rw, rh) {
-  return x < rx + rw && x + PW > rx && y <= ry + rh && y + PH >= ry;
+  const pad = 3;
+  return x < rx + rw + pad && x + PW > rx - pad && y < ry + rh + pad && y + PH > ry - pad;
 }
 
 function boxSolidX(level, x, y, forGhost, doorOpen) {
@@ -258,12 +261,12 @@ function plateActive(sim, id) {
   for (const g of sim.ghosts) {
     if (!g.visible) continue;
     for (let r = 0; r < level.rows; r++) for (let c = 0; c < level.cols; c++) {
-      if (plateId(level.grid[r][c]) === id && overlapsRect(g.x, g.y, c * TILE, r * TILE, TILE, TILE)) return true;
+      if (plateId(level.grid[r][c]) === id && overlapsRectTouch(g.x, g.y, c * TILE, r * TILE, TILE, TILE)) return true;
     }
   }
   const p = sim.player;
   for (let r = 0; r < level.rows; r++) for (let c = 0; c < level.cols; c++) {
-    if (plateId(level.grid[r][c]) === id && overlapsRect(p.x, p.y, c * TILE, r * TILE, TILE, TILE)) return true;
+    if (plateId(level.grid[r][c]) === id && overlapsRectTouch(p.x, p.y, c * TILE, r * TILE, TILE, TILE)) return true;
   }
   return false;
 }
