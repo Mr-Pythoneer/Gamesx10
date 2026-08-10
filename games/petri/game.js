@@ -6,6 +6,7 @@
 import {
   boot, RNG, Palette, clamp, text, roundRect, allFinite, registerSelftest,
   Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import { PATTERNS, patternById, rotatePattern, patternBounds, stampPattern } from './patterns.js';
 
@@ -771,6 +772,7 @@ const game = boot({
   seed: 'petri-' + Math.floor(Math.random() * 1e9),
   init, update, render,
 });
+mountLangToggle();
 
 globalThis.__petri = { makeSim, stepSim, stepCA, countColors, PATTERNS, patternById, rotatePattern, stampPattern, LEVELS };
 

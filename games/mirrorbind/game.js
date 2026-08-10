@@ -10,6 +10,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 
@@ -944,6 +945,7 @@ function render(s, ctx, g) {
 // ---------------------------------------------------------------- boot + self-test
 
 const game = boot({ id: 'mirrorbind', title: 'Mirrorbind', seed: 1, init, update, render });
+mountLangToggle();
 
 registerSelftest('mirrorbind', (check, log) => {
   const dt = 1 / 60;

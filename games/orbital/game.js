@@ -11,6 +11,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store, RNG,
   clamp, approach, text, allFinite, TAU,
   Type, HUD_H, withGlow, stat, hudStrip, panel, meter, orb, vignette, titleCard,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 
 import {
@@ -1103,6 +1104,7 @@ function render(s, ctx, g) {
 // ---------------------------------------------------------------- boot
 
 const game = boot({ id: 'orbital', title: 'Orbital', seed: 1, init, update, render });
+mountLangToggle();
 
 // ---------------------------------------------------------------- self-test
 

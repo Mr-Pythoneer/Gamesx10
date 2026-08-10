@@ -16,6 +16,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 import {
@@ -976,6 +977,7 @@ function render(s, ctx, g) {
 // ---------------------------------------------------------------- boot
 
 const game = boot({ id: 'scribble', title: 'Scribble', seed: 1, init, update, render });
+mountLangToggle();
 
 // ---------------------------------------------------------------- self-test
 

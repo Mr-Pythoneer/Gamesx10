@@ -9,6 +9,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store, RNG,
   clamp, lerp, dist, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import {
   WEAPONS, WEAPON_IDS, PASSIVES, PASSIVE_IDS, EVOLUTIONS,
@@ -1671,6 +1672,7 @@ function render(state, ctx, game) {
 // ---------------------------------------------------------------- boot
 
 const game = boot({ id: 'swarm', title: 'Swarm', seed: 1, init, update, render });
+mountLangToggle();
 
 // ================================================================== SELF-TEST
 

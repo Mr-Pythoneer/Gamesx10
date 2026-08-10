@@ -9,6 +9,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, lerp, text, allFinite, TAU, randomSeedString,
   Type, hudStrip, stat, meter, orb, vignette, titleCard,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, teleport,
@@ -717,6 +718,7 @@ const game = boot({
   seed: freshSeed(),
   init, update, render,
 });
+mountLangToggle();
 
 // ---------------------------------------------------------------- self-test
 

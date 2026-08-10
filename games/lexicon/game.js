@@ -12,6 +12,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, approach, text, roundRect, allFinite, TAU, randomSeedString,
   Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, addTile, findWord, settle, tileById, totalKE, maxOverlap, outOfBounds,
@@ -901,6 +902,7 @@ const game = boot({
   seed: randomSeedString(),
   init, update, render,
 });
+mountLangToggle();
 
 // ---------------------------------------------------------------- self-test
 

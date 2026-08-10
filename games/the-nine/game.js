@@ -14,6 +14,7 @@
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   RNG, randomSeedString, clamp, text, roundRect, allFinite, TAU,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import {
   generate, countSolutions, solveFirst, positionsOf, clueHolds,
@@ -1014,6 +1015,7 @@ function drawSolved(s, ctx, g, L) {
 // ---------------------------------------------------------------- boot
 
 const game = boot({ id: 'the-nine', title: 'The Nine', seed: 1, init, update, render });
+mountLangToggle();
 
 // Progressive enhancement: wheel scrolling for the clue list. Never traps browser zoom.
 if (game.canvas && game.canvas.addEventListener) {
