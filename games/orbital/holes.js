@@ -337,8 +337,8 @@ export const HOLES = [
     bodies: [
       { type: 'repulsor', x: 420, y: 450, r: 40 },
       { type: 'blackhole', x: 780, y: 250, r: 22 },
-      { type: 'wormhole', x: 760, y: 650, r: 28, link: 1 },
-      { type: 'wormhole', x: 1080, y: 300, r: 28, link: 0 },
+      { type: 'wormhole', x: 760, y: 650, r: 28, link: 3 },
+      { type: 'wormhole', x: 1080, y: 300, r: 28, link: 2 },
       { type: 'moon', r: 26, orbit: { cx: 900, cy: 600, r: 210, w: -0.9, phase: 1.0 } },
     ],
     solution: { a: 5.883346242177248, p: 200.20000000000002 },

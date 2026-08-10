@@ -11,6 +11,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
+  T, mountLangToggle,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 import {
@@ -191,11 +192,16 @@ function measureWith(ctx, str, font) {
 /** Greedy word wrap capped at maxLines, with a hard-truncated final line. */
 function wrapLines(ctx, str, maxW, size, maxLines) {
   const font = `500 ${size}px ${MONO}`;
-  const words = String(str).split(/\s+/).filter(Boolean);
+  const s = String(str);
+  // CJK text carries no spaces between words, so the space-splitter below would treat
+  // the whole string as one unbreakable "word" and let it run past maxW. Detect that
+  // case and wrap per-character instead — safe for Latin text too, just unnecessary.
+  const units = /\s/.test(s) ? s.split(/\s+/).filter(Boolean) : s.split('');
+  const joiner = /\s/.test(s) ? ' ' : '';
   const all = [];
   let cur = '';
-  for (const w of words) {
-    const trial = cur ? cur + ' ' + w : w;
+  for (const w of units) {
+    const trial = cur ? cur + joiner + w : w;
     if (cur && measureWith(ctx, trial, font) > maxW) { all.push(cur); cur = w; } else cur = trial;
   }
   if (cur) all.push(cur);
@@ -334,25 +340,25 @@ function drawHUD(s, ctx, g, compact) {
   const idx = clamp(s.levelIndex, 0, total - 1);
   const lvValue = `${String(idx + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`;
   const lvSize = compact ? Type.body : Type.value;
-  stat(ctx, 18, 20, 'LEVEL', lvValue, { valueSize: lvSize, color: Palette.ink });
+  stat(ctx, 18, 20, T('LEVEL', '关卡'), lvValue, { valueSize: lvSize, color: Palette.ink });
   const lvW = measureWith(ctx, lvValue, `700 ${lvSize}px ${MONO}`);
 
   // Right cluster, laid out right-to-left so the most important figure hugs the edge.
   const items = [{
-    label: 'GHOSTS',
+    label: T('GHOSTS', '幻影'),
     value: `${s.sim.ghosts.length}/${GHOST_CAP}`,
     color: Palette.violet,
     size: compact ? Type.body : Type.value,
   }, {
-    label: 'RUN', value: String(s.sim.runsUsed), color: Palette.ink, size: Type.body,
+    label: T('RUN', '次数'), value: String(s.sim.runsUsed), color: Palette.ink, size: Type.body,
   }];
   if (!compact) {
     const best = Store.get('best' + idx, null);
     if (typeof best === 'number' && Number.isFinite(best)) {
-      items.push({ label: 'BEST', value: String(best), color: Palette.accent, size: Type.body });
+      items.push({ label: T('BEST', '最佳'), value: String(best), color: Palette.accent, size: Type.body });
     }
     items.push({
-      label: 'GHOST PAR', value: String(s.sim.level.par), color: Palette.dim,
+      label: T('GHOST PAR', '标准次数'), value: String(s.sim.level.par), color: Palette.dim,
       size: Type.body, labelColor: DIM_70,
     });
   }
@@ -370,7 +376,8 @@ function drawHUD(s, ctx, g, compact) {
   const clusterLeft = x + gap;
 
   // The level name is secondary: it appears only when it genuinely fits.
-  const name = String(s.sim.level.name || '').toUpperCase();
+  const lvl = s.sim.level;
+  const name = T(String(lvl.name || ''), String(lvl.nameZh || lvl.name || '')).toUpperCase();
   const nameX = 18 + lvW + 14;
   const nameFont = `600 ${Type.small}px ${MONO}`;
   if (name && nameX + measureWith(ctx, name, nameFont) < clusterLeft - 14) {
@@ -403,13 +410,14 @@ function drawHintBar(s, ctx, g, lay, compact) {
     ctx.fillRect(barX + 1, barY + 6, 2, barH - 12);
     ctx.restore();
 
-    text(ctx, 'HINT', tx, barY + barH / 2 + 4, {
+    const hintLabel = T('HINT', '提示');
+    text(ctx, hintLabel, tx, barY + barH / 2 + 4, {
       size: Type.label, color: DIM_70, baseline: 'alphabetic', weight: 600,
     });
-    const labW = measureWith(ctx, 'HINT', `600 ${Type.label}px ${MONO}`) + 4 * Type.label * 0.14;
+    const labW = measureWith(ctx, hintLabel, `600 ${Type.label}px ${MONO}`) + hintLabel.length * Type.label * 0.14;
     tx += labW + 14;
 
-    const keys = '← →  MOVE     SPACE  JUMP     R  RETRY';
+    const keys = T('← →  MOVE     SPACE  JUMP     R  RETRY', '← →  移动     SPACE  跳跃     R  重试');
     const keysW = measureWith(ctx, keys, `500 ${Type.label}px ${MONO}`);
     text(ctx, keys, barX + barW - 14, barY + barH / 2 + 4, {
       size: Type.label, color: DIM_70, align: 'right', baseline: 'alphabetic', weight: 500,
@@ -418,7 +426,8 @@ function drawHintBar(s, ctx, g, lay, compact) {
   }
 
   const size = compact ? 11 : Type.small;
-  const lines = wrapLines(ctx, s.sim.level.hint || '', avail, size, compact ? 2 : 1);
+  const hintStr = T(s.sim.level.hint || '', s.sim.level.hintZh || s.sim.level.hint || '');
+  const lines = wrapLines(ctx, hintStr, avail, size, compact ? 2 : 1);
   const step = size + 3;
   let ty = barY + (barH - lines.length * step) / 2 + size;
   for (const line of lines) {
@@ -660,9 +669,9 @@ function render(s, ctx, g) {
 
   if (s.phase === 'cleared' && Number.isFinite(s.lastUsed)) {
     const a = clamp(s.timer / 0.6, 0, 1);
-    const msg = `CLEARED IN ${s.lastUsed} RUN${s.lastUsed === 1 ? '' : 'S'}`;
-    const sub = s.lastImproved ? 'NEW BEST'
-      : (Number.isFinite(s.lastPar) ? `GHOST PAR ${s.lastPar}` : '');
+    const msg = T(`CLEARED IN ${s.lastUsed} RUN${s.lastUsed === 1 ? '' : 'S'}`, `用了 ${s.lastUsed} 次通关`);
+    const sub = s.lastImproved ? T('NEW BEST', '新纪录')
+      : (Number.isFinite(s.lastPar) ? T(`GHOST PAR ${s.lastPar}`, `标准次数 ${s.lastPar}`) : '');
     const bw = Math.min(g.w - 40, 340);
     const bh = sub ? 76 : 54;
     const bx = (g.w - bw) / 2, by = g.h / 2 - bh / 2;
@@ -686,15 +695,15 @@ function render(s, ctx, g) {
 
   if (s.phase === 'intro') {
     titleCard(ctx, g, {
-      title: 'AFTERIMAGE',
-      tagline: 'Death or retry records your run as a ghost.',
+      title: T('AFTERIMAGE', '残影'),
+      tagline: T('Death or retry records your run as a ghost.', '死亡或重试,都会把这一次操作录成一个幻影。'),
       lines: [
-        'Park a ghost on a plate to hold a door open.',
-        "Climb a ghost's head to reach higher ledges.",
+        T('Park a ghost on a plate to hold a door open.', '把幻影停在压力板上,门就会一直开着。'),
+        T("Climb a ghost's head to reach higher ledges.", '踩着幻影的头,爬上更高的台子。'),
         '',
-        '← →  MOVE     SPACE  JUMP     R  RETRY',
+        T('← →  MOVE     SPACE  JUMP     R  RETRY', '← →  移动     SPACE  跳跃     R  重试'),
       ],
-      prompt: 'PRESS SPACE',
+      prompt: T('PRESS SPACE', '按空格键开始'),
       t, accent: Palette.accent,
     });
   }
@@ -702,10 +711,10 @@ function render(s, ctx, g) {
   if (s.phase === 'complete') {
     const d = Number.isFinite(s.runDeaths) ? s.runDeaths : 0;
     titleCard(ctx, g, {
-      title: 'ALL CLEAR',
-      tagline: `${LEVELS.length} levels, every echo spent.`,
-      lines: [`${d} retr${d === 1 ? 'y' : 'ies'} this run.`],
-      prompt: 'ENTER TO RUN IT BACK',
+      title: T('ALL CLEAR', '全部通关'),
+      tagline: T(`${LEVELS.length} levels, every echo spent.`, `${LEVELS.length} 个关卡,每一次回响都用上了。`),
+      lines: [T(`${d} retr${d === 1 ? 'y' : 'ies'} this run.`, `本轮重试了 ${d} 次。`)],
+      prompt: T('ENTER TO RUN IT BACK', '按回车再玩一次'),
       t, accent: Palette.accent,
     });
   }
@@ -716,6 +725,7 @@ function render(s, ctx, g) {
 // ---------------------------------------------------------------- boot + self-test
 
 const game = boot({ id: 'afterimage', title: 'Afterimage', seed: 1, init, update, render });
+mountLangToggle();
 
 registerSelftest('afterimage', (check, log) => {
   const dt = 1 / 60;

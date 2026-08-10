@@ -18,6 +18,72 @@ if (typeof globalThis.addEventListener === 'function' && !globalThis.__errors) {
   });
 }
 
+// ---------------------------------------------------------------- language (i18n)
+//
+// One toggle, shared across the hub and every game via localStorage. T(en, zh) is
+// called at DRAW time (every frame), not once at init, so a mid-game toggle repaints
+// immediately with no reload — the canvas is already being redrawn 60 times a second,
+// translation just rides along. DOM chrome (the topbar's <h1>/.tag/.keys, which isn't
+// canvas) is bound separately via [data-en][data-zh] attributes + mountLangToggle().
+
+const LANG_KEY = 'gx10:lang';
+const _langListeners = new Set();
+
+function _detectLang() {
+  if (typeof localStorage === 'undefined') return 'en';
+  const saved = localStorage.getItem(LANG_KEY);
+  if (saved === 'en' || saved === 'zh') return saved;
+  return (typeof navigator !== 'undefined' && /^zh/i.test(navigator.language || '')) ? 'zh' : 'en';
+}
+
+let _lang = _detectLang();
+
+export function currentLang() { return _lang; }
+
+export function setLang(l) {
+  if (l !== 'en' && l !== 'zh') return;
+  _lang = l;
+  try { localStorage.setItem(LANG_KEY, l); } catch { /* private mode */ }
+  for (const fn of _langListeners) fn(l);
+}
+
+export function onLangChange(fn) { _langListeners.add(fn); return () => _langListeners.delete(fn); }
+
+/** Pick a string for the active language. Call inline at draw time: T('Score', '分数'). */
+export function T(en, zh) { return _lang === 'zh' ? zh : en; }
+
+/**
+ * Mounts a 中文/EN toggle button into `.topbar` (idempotent — safe to call every
+ * frame or every boot) and binds every [data-en][data-zh] element in the DOM to swap
+ * text on change. Games only need to add data-en/data-zh to their static topbar HTML;
+ * this handles the button, the binding, and keeping <html lang> correct.
+ */
+export function mountLangToggle() {
+  if (typeof document === 'undefined' || document.getElementById('gx10LangBtn')) return;
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return;
+
+  const applyDom = () => {
+    document.documentElement.lang = _lang;
+    for (const el of document.querySelectorAll('[data-en][data-zh]')) {
+      el.textContent = _lang === 'zh' ? el.getAttribute('data-zh') : el.getAttribute('data-en');
+    }
+    const btn = document.getElementById('gx10LangBtn');
+    if (btn) btn.textContent = _lang === 'zh' ? 'EN' : '中文';
+  };
+
+  const btn = document.createElement('button');
+  btn.id = 'gx10LangBtn';
+  btn.type = 'button';
+  btn.className = 'lang-btn-inline';
+  btn.setAttribute('aria-label', '切换语言 / switch language');
+  btn.addEventListener('click', () => { setLang(_lang === 'zh' ? 'en' : 'zh'); applyDom(); });
+  topbar.appendChild(btn);
+
+  applyDom();
+  onLangChange(applyDom);
+}
+
 export const Palette = {
   bg: '#07080d',
   bg2: '#0d1018',

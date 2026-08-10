@@ -106,6 +106,30 @@ a:hover { text-decoration: underline; }
   margin: 0 1px;
 }
 
+.lang-btn-inline {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: 3px;
+  padding: 3px 9px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: color 0.15s, border-color 0.15s;
+}
+.lang-btn-inline:hover { color: var(--accent); border-color: var(--accent); }
+html[lang="zh"] .topbar .tag,
+html[lang="zh"] .card p,
+html[lang="zh"] .card h2 {
+  font-family: "PingFang SC", "Microsoft YaHei", var(--mono);
+}
+html[lang="zh"] .topbar h1 {
+  font-family: "PingFang SC", "Microsoft YaHei", var(--mono);
+  letter-spacing: 0.04em;
+}
+
 /* Narrow windows: drop the least important chrome rather than let it wrap.
    Key hints go first (every game also states its controls on its own title card),
    then the tagline. The back link and title always survive. */

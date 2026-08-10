@@ -14,8 +14,9 @@
 // development (see report) and re-verified every load by the in-browser self-test.
 export const LEVELS = [
   {
-    name: 'First Echo',
+    name: 'First Echo', nameZh: '第一声回响',
     hint: 'Stand on the plate, then retry — your ghost will hold it for you.',
+    hintZh: '站到压力板上,然后重试——你的幻影会替你按住它。',
     par: 1,
     grid: [
       '####################',
@@ -31,8 +32,9 @@ export const LEVELS = [
     ],
   },
   {
-    name: 'Stepping Stone',
+    name: 'Stepping Stone', nameZh: '垫脚石',
     hint: 'A ghost standing still is still standing. Climb it.',
+    hintZh: '静止不动的幻影仍然站在那里。踩上去。',
     par: 1,
     grid: [
       '####################',
@@ -50,8 +52,9 @@ export const LEVELS = [
     ],
   },
   {
-    name: 'Two Hands',
+    name: 'Two Hands', nameZh: '两只手',
     hint: 'Hop onto a ledge plate, then retry. Two ghosts, two doors.',
+    hintZh: '跳上压力板,然后重试。两个幻影,两扇门。',
     par: 2,
     grid: [
       '##################################',
@@ -68,8 +71,9 @@ export const LEVELS = [
     ],
   },
   {
-    name: 'Three of a Kind',
+    name: 'Three of a Kind', nameZh: '三重奏',
     hint: 'Two ledges to hold the doors, one more to boost you over the last wall.',
+    hintZh: '两个幻影按住两扇门,再多一个把你顶过最后那堵墙。',
     par: 3,
     grid: [
       '##########################################',
