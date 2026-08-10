@@ -1,0 +1,192 @@
+// Swarm — content tables. Pure data, no DOM, no randomness. Imported by both game.js
+// and the self-test / verification scripts.
+
+// ---------------------------------------------------------------- weapons
+// Each weapon: id, name, desc, maxLevel, base stats, and a per-level stat curve fn.
+// `fire(owner, sim, level, api)` is called by the sim's weapon-cooldown loop.
+
+export const WEAPONS = {
+  blade: {
+    id: 'blade', name: 'Whirling Blade', icon: 'blade',
+    desc: 'Spinning blades orbit you, cutting anything they touch.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        count: 1 + Math.floor(level / 2),      // orbiting blades
+        dmg: 6 + level * 2,
+        radius: 34 + level * 2,
+        speed: 2.2 + level * 0.12,
+      };
+    },
+  },
+  bolt: {
+    id: 'bolt', name: 'Auto Bolt', icon: 'bolt',
+    desc: 'Fires a homing bolt at the nearest enemy on a timer.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        cooldown: Math.max(0.18, 0.85 - level * 0.08),
+        dmg: 8 + level * 3,
+        count: 1 + Math.floor(level / 3),
+        speed: 260,
+      };
+    },
+  },
+  nova: {
+    id: 'nova', name: 'Nova Pulse', icon: 'nova',
+    desc: 'Periodically detonates a damaging ring centered on you.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        cooldown: Math.max(0.9, 2.6 - level * 0.2),
+        dmg: 10 + level * 4,
+        radius: 60 + level * 8,
+      };
+    },
+  },
+  lance: {
+    id: 'lance', name: 'Piercing Lance', icon: 'lance',
+    desc: 'Launches a straight lance that pierces every enemy in its path.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        cooldown: Math.max(0.5, 1.4 - level * 0.11),
+        dmg: 12 + level * 5,
+        speed: 380,
+        width: 8 + level,
+      };
+    },
+  },
+  spray: {
+    id: 'spray', name: 'Shot Spray', icon: 'spray',
+    desc: 'Fans out a spread of short-range pellets at the nearest cluster.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        cooldown: Math.max(0.35, 1.1 - level * 0.08),
+        dmg: 4 + level * 1.5,
+        pellets: 3 + Math.floor(level / 2),
+        speed: 300,
+        range: 180,
+      };
+    },
+  },
+  aura: {
+    id: 'aura', name: 'Static Aura', icon: 'aura',
+    desc: 'A constant damage field that ticks on every enemy touching you.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        radius: 40 + level * 4,
+        dps: 6 + level * 2.5,
+      };
+    },
+  },
+  chain: {
+    id: 'chain', name: 'Chain Spark', icon: 'chain',
+    desc: 'A bolt of electricity that arcs between nearby enemies.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        cooldown: Math.max(0.4, 1.3 - level * 0.1),
+        dmg: 7 + level * 2.5,
+        jumps: 2 + Math.floor(level / 2),
+        jumpRange: 110,
+      };
+    },
+  },
+  mine: {
+    id: 'mine', name: 'Drop Mine', icon: 'mine',
+    desc: 'Drops a proximity mine behind you that explodes on contact.',
+    maxLevel: 8,
+    stat(level) {
+      return {
+        cooldown: Math.max(0.6, 1.8 - level * 0.14),
+        dmg: 16 + level * 6,
+        radius: 40 + level * 3,
+        fuse: 3.0,
+      };
+    },
+  },
+};
+
+export const WEAPON_IDS = Object.keys(WEAPONS);
+
+// ---------------------------------------------------------------- passives
+
+export const PASSIVES = {
+  might: { id: 'might', name: 'Might', icon: 'might', desc: '+dmg to all weapons.', maxLevel: 5, stat: (l) => ({ dmgMul: 1 + l * 0.14 }) },
+  haste: { id: 'haste', name: 'Haste', icon: 'haste', desc: '+move speed.', maxLevel: 5, stat: (l) => ({ speedMul: 1 + l * 0.09 }) },
+  focus: { id: 'focus', name: 'Focus', icon: 'focus', desc: '-weapon cooldowns.', maxLevel: 5, stat: (l) => ({ cdMul: 1 - l * 0.09 }) },
+  vigor: { id: 'vigor', name: 'Vigor', icon: 'vigor', desc: '+max HP and regen.', maxLevel: 5, stat: (l) => ({ hpMul: 1 + l * 0.16, regen: l * 0.4 }) },
+  magnet: { id: 'magnet', name: 'Magnet', icon: 'magnet', desc: '+XP pickup radius.', maxLevel: 5, stat: (l) => ({ pickupMul: 1 + l * 0.35 }) },
+  armor: { id: 'armor', name: 'Armor', icon: 'armor', desc: 'Flat damage reduction.', maxLevel: 5, stat: (l) => ({ reduce: l * 1.2 }) },
+  growth: { id: 'growth', name: 'Growth', icon: 'growth', desc: '+XP gained from gems.', maxLevel: 5, stat: (l) => ({ xpMul: 1 + l * 0.15 }) },
+  wide: { id: 'wide', name: 'Amplitude', icon: 'wide', desc: '+area/size of all weapon effects.', maxLevel: 5, stat: (l) => ({ areaMul: 1 + l * 0.12 }) },
+};
+
+export const PASSIVE_IDS = Object.keys(PASSIVES);
+
+// ---------------------------------------------------------------- evolutions
+// requires: weapon at maxLevel + specific passive owned (any level >=1).
+// Evolved weapons replace the base weapon's fire behavior entirely (distinct tag).
+
+export const EVOLUTIONS = [
+  { id: 'blade_evo', weapon: 'blade', passive: 'wide', name: 'Blade Storm', desc: 'Doubles the blade ring and adds a knockback shockwave on every hit.' },
+  { id: 'bolt_evo', weapon: 'bolt', passive: 'focus', name: 'Railgun', desc: 'Bolts become instant hitscan lines that pierce the whole map.' },
+  { id: 'nova_evo', weapon: 'nova', passive: 'vigor', name: 'Heartstorm', desc: 'Nova pulses continuously at low power and heals you per enemy hit.' },
+  { id: 'lance_evo', weapon: 'lance', passive: 'might', name: 'Skewer', desc: 'Lance fires three parallel piercing beams instead of one.' },
+  { id: 'aura_evo', weapon: 'aura', passive: 'magnet', name: 'Gravity Well', desc: 'Aura pulls enemies inward while damaging them, then quakes.' },
+  { id: 'chain_evo', weapon: 'chain', passive: 'growth', name: 'Storm Front', desc: 'Chain spark jumps infinitely and grants bonus XP per arc.' },
+];
+
+// ---------------------------------------------------------------- enemies
+
+export const ENEMIES = {
+  chaser: { id: 'chaser', name: 'Chaser', hp: 12, speed: 62, dmg: 6, radius: 9, xp: 1, color: 'hot' },
+  swarmer: { id: 'swarmer', name: 'Swarmer', hp: 5, speed: 88, dmg: 3, radius: 6, xp: 1, color: 'warm' },
+  charger: { id: 'charger', name: 'Charger', hp: 24, speed: 40, dmg: 12, radius: 12, xp: 2, color: 'violet', chargeSpeed: 220, chargeCooldown: 2.2 },
+  splitter: { id: 'splitter', name: 'Splitter', hp: 20, speed: 50, dmg: 7, radius: 11, xp: 2, color: 'accent2', splitInto: 2 },
+  shielded: { id: 'shielded', name: 'Shielded', hp: 40, speed: 45, dmg: 8, radius: 12, xp: 3, color: 'dim', shield: 30 },
+  ranged: { id: 'ranged', name: 'Ranged', hp: 14, speed: 35, dmg: 5, radius: 9, xp: 2, color: 'accent', shootRange: 220, shootCooldown: 1.6 },
+  elite: { id: 'elite', name: 'Elite', hp: 140, speed: 55, dmg: 14, radius: 16, xp: 8, color: 'hot' },
+};
+
+export const BOSS = { id: 'boss', name: 'The Swarm Mother', hp: 3200, speed: 42, dmg: 22, radius: 34, xp: 100 };
+
+// ---------------------------------------------------------------- characters
+
+export const CHARACTERS = [
+  {
+    id: 'wren', name: 'Wren', desc: 'Balanced starter. Opens with the Whirling Blade.',
+    startWeapon: 'blade', bias: {}, unlock: null,
+  },
+  {
+    id: 'kestrel', name: 'Kestrel', desc: 'Fast and fragile. Opens with Auto Bolt, +15% speed, -15% max HP.',
+    startWeapon: 'bolt', bias: { speedMul: 1.15, hpMul: 0.85 }, unlock: { kind: 'gold', amount: 200 },
+  },
+  {
+    id: 'thorn', name: 'Thorn', desc: 'Tanky brawler. Opens with Static Aura, +25% max HP, -10% speed.',
+    startWeapon: 'aura', bias: { speedMul: 0.9, hpMul: 1.25 }, unlock: { kind: 'wins', amount: 1 },
+  },
+];
+
+// ---------------------------------------------------------------- spawn director
+// Returns archetype weights and density for a given time-in-run (seconds, 0..600).
+
+export function directorAt(tSec) {
+  const m = tSec / 60;
+  const density = clamp01(m / 8);
+  const weights = { chaser: 1, swarmer: 0 };
+  if (m >= 1.5) weights.swarmer = 0.8;
+  if (m >= 3) weights.charger = 0.5;
+  if (m >= 4) weights.splitter = 0.4;
+  if (m >= 5.5) weights.shielded = 0.35;
+  if (m >= 6.5) weights.ranged = 0.35;
+  const eliteChance = m >= 3 ? clamp01((m - 3) / 12) * 0.02 : 0;
+  return { density, weights, eliteChance };
+}
+
+function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+export const RUN_DURATION = 600; // 10:00
