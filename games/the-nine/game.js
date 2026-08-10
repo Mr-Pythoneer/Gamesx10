@@ -666,19 +666,20 @@ function drawHeader(s, ctx, g, L) {
   let x = L.pad;
   text(ctx, SHIP.name, x, y, { size: fs, color: Palette.ink, baseline: 'middle', weight: 700 });
   x += measureIn(ctx, SHIP.name, fs, 700) + gap;
-  text(ctx, 'SEED', x, y, { size: labelFs, color: Palette.dim, baseline: 'middle', weight: 600 });
-  x += measureIn(ctx, 'SEED', labelFs, 600) + tight;
+  const lSeed = T('SEED', '种子');
+  text(ctx, lSeed, x, y, { size: labelFs, color: Palette.dim, baseline: 'middle', weight: 600 });
+  x += measureIn(ctx, lSeed, labelFs, 600) + tight;
   text(ctx, s.seedStr, x, y, { size: fs, color: Palette.accent, baseline: 'middle', weight: 700 });
   if (!L.narrow) {
     x += measureIn(ctx, s.seedStr, fs, 700) + gap;
-    text(ctx, TIERS[s.tierIndex].label, x, y, { size: fs, color: Palette.dim, baseline: 'middle' });
+    text(ctx, tierLabel(TIERS[s.tierIndex]), x, y, { size: fs, color: Palette.dim, baseline: 'middle' });
   }
 
   // right cluster — dim label, bright value, laid out right to left.
   // Same tokens and roughly the same width as before; the hierarchy is what changes.
   const segs = L.narrow
     ? [['', `${s.lockedCount}/${s.cells}`], ['', String(s.confirms)], ['', fmtTime(s.time)]]
-    : [['PROVEN', `${s.lockedCount}/${s.cells}`], ['CONFIRMS', String(s.confirms)], ['', fmtTime(s.time)]];
+    : [[T('PROVEN', '已证实'), `${s.lockedCount}/${s.cells}`], [T('CONFIRMS', '确认次数'), String(s.confirms)], ['', fmtTime(s.time)]];
   let rx = g.w - L.pad;
   for (let i = segs.length - 1; i >= 0; i--) {
     const [label, value] = segs[i];
@@ -699,7 +700,7 @@ function drawRoster(s, ctx, g, L) {
 
   // column headers
   const hy = L.roster.y + L.colHeadH / 2 + 2;
-  text(ctx, 'BERTH', L.roster.x + 3, hy, { size: Math.max(8, 8.5 * S), color: Palette.dim, baseline: 'middle', weight: 700 });
+  text(ctx, T('BERTH', '铺位'), L.roster.x + 3, hy, { size: Math.max(8, 8.5 * S), color: Palette.dim, baseline: 'middle', weight: 700 });
   for (let ai = 0; ai < s.attrs.length; ai++) {
     const a = s.attrs[ai];
     const c = L.cell(ai, 0);
@@ -811,7 +812,7 @@ function drawPapers(s, ctx, g, L) {
   panel(ctx, L.papers);
   const order = clueOrder(s);
   const hy = L.papers.y + L.listHeadH / 2 + 2;
-  text(ctx, 'THE PAPERS', L.papers.x + Math.round(7 * S), hy, {
+  text(ctx, T('THE PAPERS', '文书'), L.papers.x + Math.round(7 * S), hy, {
     size: Math.max(8, 9 * S), color: Palette.ink, baseline: 'middle', weight: 700,
   });
   const label = s.focus >= 0
@@ -1021,7 +1022,8 @@ function drawSolved(s, ctx, g, L) {
   let y = g.h / 2 - 92 * S;
   text(ctx, 'THE NINE ARE NAMED', cx, y, { size: 26 * S, color: Palette.accent, align: 'center', weight: 700 });
   y += 32 * S;
-  text(ctx, `${SHIP.name} · SEED ${s.seedStr} · ${TIERS[s.tierIndex].label}`, cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center' });
+  text(ctx, T(`${SHIP.name} · SEED ${s.seedStr} · ${TIERS[s.tierIndex].label}`,
+    `${SHIP.name} · 种子 ${s.seedStr} · ${tierLabel(TIERS[s.tierIndex])}`), cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center' });
   y += 32 * S;
   text(ctx, `${fmtTime(s.solvedAt)}   ·   ${s.confirms} CONFIRM${s.confirms === 1 ? '' : 'S'}`, cx, y, {
     size: 17 * S, color: Palette.ink, align: 'center', weight: 700,
