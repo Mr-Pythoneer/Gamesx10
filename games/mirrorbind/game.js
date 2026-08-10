@@ -10,7 +10,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle,
+  T, mountLangToggle, currentLang,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 
@@ -455,14 +455,26 @@ function worldTint(w) {
 }
 
 function worldLabel(w, short) {
-  return (w.flipX ? (short ? 'MIRROR' : 'MIRRORED') : 'NORMAL')
-       + (w.flipY ? (short ? ' INV' : ' · INVERTED') : '');
+  return (w.flipX ? T(short ? 'MIRROR' : 'MIRRORED', short ? '镜像' : '镜像世界') : T('NORMAL', '正常'))
+       + (w.flipY ? T(short ? ' INV' : ' · INVERTED', short ? ' 倒' : ' · 倒转') : '');
 }
 
 // Layout maths never calls measureText, so the HUD lands identically in every engine
-// (and in the headless gate). Mono advance is a fixed fraction of the font size.
-const monoW = (str, size) => String(str).length * size * 0.62;
-const capW = (str, size = Type.label) => String(str).length * size * 0.74;
+// (and in the headless gate). Mono advance is a fixed fraction of the font size — but
+// that fraction was calibrated for narrow Latin monospace glyphs. CJK characters render
+// close to full-width (~1em), so a Chinese label at the same character-count factor
+// would under-estimate its own width and could overlap whatever sits next to it. Sum
+// per-character instead: CJK codepoints get the wider advance, everything else keeps
+// the original factor.
+const CJK_RE = /[　-〿぀-ヿ㐀-鿿＀-￯]/;
+function charAdvance(ch, size, narrowFactor) { return CJK_RE.test(ch) ? size * 1.02 : size * narrowFactor; }
+function textW(str, size, narrowFactor) {
+  let w = 0;
+  for (const ch of String(str)) w += charAdvance(ch, size, narrowFactor);
+  return w;
+}
+const monoW = (str, size) => textW(str, size, 0.62);
+const capW = (str, size = Type.label) => textW(str, size, 0.74);
 const pad2 = (n) => String(n).padStart(2, '0');
 
 /** Uppercase, letterspaced, dim — the treatment stat() gives its labels. */
@@ -812,27 +824,29 @@ function drawHud(s, ctx, g) {
 
   const level = LEVELS[s.levelIndex];
   const levelValue = `${pad2(s.levelIndex + 1)}/${pad2(LEVELS.length)}`;
+  const lLevel = T('Level', '关卡'), lChamber = T('Chamber', '密室'), lDeaths = T('Deaths', '死亡'), lBound = T('Bound', '归位');
   let x = 18;
-  stat(ctx, x, 20, 'Level', levelValue);
-  x += Math.max(capW('LEVEL'), monoW(levelValue, Type.value)) + 26;
+  stat(ctx, x, 20, lLevel, levelValue);
+  x += Math.max(capW(lLevel.toUpperCase()), monoW(levelValue, Type.value)) + 26;
 
   if (!compact) {
-    stat(ctx, x, 20, 'Chamber', level.name.toUpperCase(), {
+    const chamberName = T(level.name, level.nameZh || level.name);
+    stat(ctx, x, 20, lChamber, currentLang() === 'zh' ? chamberName : chamberName.toUpperCase(), {
       color: Palette.accent2, valueSize: Type.body,
     });
   }
 
   let rx = g.w - 18;
   const deaths = String(s.runDeaths);
-  stat(ctx, rx, 20, 'Deaths', deaths, {
+  stat(ctx, rx, 20, lDeaths, deaths, {
     align: 'right', color: s.runDeaths > 0 ? Palette.hot : Palette.ink,
   });
-  rx -= Math.max(capW('DEATHS'), monoW(deaths, Type.value)) + 26;
+  rx -= Math.max(capW(lDeaths.toUpperCase()), monoW(deaths, Type.value)) + 26;
 
   if (!compact) {
     const bound = s.sim.chars.reduce((a, c) => a + (c.won ? 1 : 0), 0);
     const boundValue = `${bound}/${s.sim.chars.length}`;
-    stat(ctx, rx, 20, 'Bound', boundValue, {
+    stat(ctx, rx, 20, lBound, boundValue, {
       align: 'right', valueSize: Type.body,
       color: bound === s.sim.chars.length ? Palette.accent : Palette.ink,
     });
@@ -880,9 +894,10 @@ function render(s, ctx, g) {
   drawHud(s, ctx, g);
 
   if (s.hintT > 0 && s.phase === 'play') {
+    const hint = T(level.hint, level.hintZh || level.hint);
     const a = clamp(s.hintT / 0.6, 0, 1);
-    const size = clamp((g.w - 72) / Math.max(1, level.hint.length * 0.62), 8, Type.small);
-    const pw = monoW(level.hint, size) + 30;
+    const size = clamp((g.w - 72) / Math.max(1, textW(hint, 1, 0.62)), 8, Type.small);
+    const pw = monoW(hint, size) + 30;
     const ph = 22;
     const px = g.w / 2 - pw / 2;
     const py = g.h - 30;
@@ -891,7 +906,7 @@ function render(s, ctx, g) {
     panel(ctx, px, py, pw, ph, {
       fill: 'rgba(13,16,24,0.9)', border: Palette.grid, radius: ph / 2,
     });
-    text(ctx, level.hint, g.w / 2, py + ph / 2, {
+    text(ctx, hint, g.w / 2, py + ph / 2, {
       size, color: Palette.dim, align: 'center', baseline: 'middle',
     });
     ctx.restore();
@@ -906,23 +921,23 @@ function render(s, ctx, g) {
       fill: 'rgba(13,16,24,0.94)', border: withAlpha(Palette.accent, 0.45),
       radius: bh / 2, glowColor: Palette.accent, glowBlur: 20,
     });
-    capLabel(ctx, 'Chamber Clear', g.w / 2, by + bh / 2, {
+    capLabel(ctx, T('Chamber Clear', '密室已通关'), g.w / 2, by + bh / 2, {
       size: Type.small, color: Palette.accent, align: 'center',
     });
   }
 
   if (s.phase === 'intro') {
     titleCard(ctx, g, {
-      title: 'MIRRORBIND',
-      tagline: 'One input moves every version of you.',
+      title: T('MIRRORBIND', '镜绑'),
+      tagline: T('One input moves every version of you.', '一组按键操纵你的每一个分身。'),
       lines: [
-        'Mirrored worlds read your left as their right.',
-        'Inverted worlds fall the other way.',
-        'If one of you dies, all of you die.',
+        T('Mirrored worlds read your left as their right.', '镜像世界会把你的左当成它的右。'),
+        T('Inverted worlds fall the other way.', '倒转世界的重力方向相反。'),
+        T('If one of you dies, all of you die.', '只要有一个你死了,所有的你都会死。'),
         '',
-        'ARROWS / A D to move · SPACE jump · R retry',
+        T('ARROWS / A D to move · SPACE jump · R retry', '方向键 / A D 移动 · SPACE 跳跃 · R 重试'),
       ],
-      prompt: 'PRESS SPACE',
+      prompt: T('PRESS SPACE', '按空格键开始'),
       t: g.t,
       accent: Palette.accent,
     });
@@ -930,10 +945,10 @@ function render(s, ctx, g) {
 
   if (s.phase === 'complete') {
     titleCard(ctx, g, {
-      title: 'ALL TEN BOUND',
-      tagline: `Finished with ${s.runDeaths} deaths.`,
-      lines: ['Every mirror walked itself home.'],
-      prompt: 'ENTER TO RUN IT BACK',
+      title: T('ALL TEN BOUND', '十关全部归位'),
+      tagline: T(`Finished with ${s.runDeaths} deaths.`, `以 ${s.runDeaths} 次死亡完成。`),
+      lines: [T('Every mirror walked itself home.', '每一面镜子都自己走回了家。')],
+      prompt: T('ENTER TO RUN IT BACK', '按 ENTER 再来一轮'),
       t: g.t,
       accent: Palette.accent,
     });

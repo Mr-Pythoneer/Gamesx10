@@ -1085,16 +1085,22 @@ function glyph(ctx, id, x, y, r, color) {
 function wrapText(ctx, str, x, y, maxW, lh, opts) {
   const o = opts || {};
   ctx.font = `${o.weight || 500} ${o.size}px ${o.font || MONO}`;
-  const words = String(str).split(' ');
+  const s = String(str);
+  // CJK text carries no spaces between words, so splitting on ' ' would treat the
+  // whole string as one unbreakable "word" and let it overflow maxW. Wrap per-character
+  // instead when the string has no whitespace — safe for Latin text too.
+  const hasSpace = /\s/.test(s);
+  const words = hasSpace ? s.split(' ') : s.split('');
+  const sep = hasSpace ? ' ' : '';
   const maxLines = o.maxLines || 99;
   let line = '', yy = y, drawn = 0;
   for (const wd of words) {
-    const t = line + wd + ' ';
+    const t = line + wd + sep;
     if (ctx.measureText(t).width > maxW && line) {
       if (drawn + 1 >= maxLines) { line = line.trim() + '…'; break; }
       text(ctx, line.trim(), x, yy, o);
       drawn++;
-      line = wd + ' ';
+      line = wd + sep;
       yy += lh;
     } else line = t;
   }
@@ -1141,7 +1147,7 @@ function drawBoss(ctx, sim, en) {
   ctx.beginPath(); ctx.arc(0, 0, r * 1.78, 4.3, 6.2); ctx.stroke();
   ctx.restore();
 
-  text(ctx, 'THE SWARM MOTHER', en.x, en.y - r - 30, {
+  text(ctx, T(BOSS.name, BOSS.nameZh || BOSS.name), en.x, en.y - r - 30, {
     size: Type.label, color: Palette.hot, align: 'center', weight: 700,
   });
 }
@@ -1390,23 +1396,23 @@ function renderHud(sim, state, ctx, game) {
 
   const vs = compact ? 20 : Type.value;
   const y = 20;
-  stat(ctx, 16, y, 'level', p.level, { color: Palette.warm, valueSize: vs });
-  stat(ctx, 16 + (compact ? 76 : 100), y, 'kills', sim.kills, { valueSize: vs });
+  stat(ctx, 16, y, T('level', '等级'), p.level, { color: Palette.warm, valueSize: vs });
+  stat(ctx, 16 + (compact ? 76 : 100), y, T('kills', '击杀'), sim.kills, { valueSize: vs });
 
   const timeLeft = Math.max(0, RUN_DURATION - sim.elapsed);
   const mm = Math.floor(timeLeft / 60), ss = Math.floor(timeLeft % 60);
   stat(ctx, game.w / 2, y,
-    sim.bossSpawned ? 'final wave' : 'time left',
-    sim.bossSpawned ? 'BOSS' : `${mm}:${String(ss).padStart(2, '0')}`,
+    sim.bossSpawned ? T('final wave', '最终波次') : T('time left', '剩余时间'),
+    sim.bossSpawned ? T('BOSS', '首领') : `${mm}:${String(ss).padStart(2, '0')}`,
     { align: 'center', color: sim.bossSpawned ? Palette.hot : Palette.ink, valueSize: vs });
 
-  stat(ctx, game.w - 16, y, 'gold', sim.gold, { align: 'right', color: Palette.warm, valueSize: vs });
+  stat(ctx, game.w - 16, y, T('gold', '金币'), sim.gold, { align: 'right', color: Palette.warm, valueSize: vs });
 
   // boss health, directly under the strip
   if (sim.boss && !sim.boss.dead) {
     const bw = Math.min(520, game.w - 120);
     const bx = game.w / 2 - bw / 2, by = HUD_H + 26;
-    text(ctx, 'THE SWARM MOTHER', game.w / 2, by - 3, {
+    text(ctx, T(BOSS.name, BOSS.nameZh || BOSS.name), game.w / 2, by - 3, {
       size: Type.label, color: Palette.hot, align: 'center', weight: 700, baseline: 'bottom',
     });
     meter(ctx, bx, by, bw, 9, clamp(sim.boss.hp / Math.max(1, sim.boss.maxHp), 0, 1), { color: Palette.hot });
@@ -1416,7 +1422,7 @@ function renderHud(sim, state, ctx, game) {
   const hw = clamp(game.w * 0.24, 130, 280);
   const hf = clamp(p.hp / Math.max(1, p.maxHp), 0, 1);
   const hy = game.h - 34;
-  text(ctx, 'HULL', 16, hy - 17, { size: Type.label, color: Palette.dim, weight: 600 });
+  text(ctx, T('HULL', '船体'), 16, hy - 17, { size: Type.label, color: Palette.dim, weight: 600 });
   text(ctx, `${Math.ceil(p.hp)} / ${Math.round(p.maxHp)}`, 16 + hw, hy - 17, {
     size: Type.label, color: hpColor(hf), align: 'right', weight: 700,
   });
@@ -1449,6 +1455,39 @@ const CARD_TONE = {
   gold: Palette.dim,
 };
 
+const CARD_KIND_LABEL = {
+  evolution: T('EVOLUTION', '进化'),
+  weapon: T('WEAPON', '武器'),
+  passive: T('PASSIVE', '被动'),
+  gold: T('GOLD', '金币'),
+};
+
+/** Card name/desc are built by the pure sim from content-table strings; translate them
+ * here at render time by looking the id back up in the content tables, so stepSim's
+ * draft options stay English-only and deterministic for the self-test. */
+function draftCardText(card) {
+  if (card.kind === 'evolution') {
+    const evo = EVOLUTIONS.find((e) => e.id === card.id);
+    return evo ? { name: T(evo.name, evo.nameZh || evo.name), desc: T(evo.desc, evo.descZh || evo.desc) } : { name: card.name, desc: card.desc };
+  }
+  if (card.kind === 'weapon') {
+    const w = WEAPONS[card.id];
+    const isNew = /\(new\)$/.test(card.name);
+    const suffix = isNew ? T(' (new)', '(新)') : T(' +1', ' +1');
+    return w ? { name: T(w.name, w.nameZh || w.name) + suffix, desc: T(w.desc, w.descZh || w.desc) } : { name: card.name, desc: card.desc };
+  }
+  if (card.kind === 'passive') {
+    const pa = PASSIVES[card.id];
+    const isNew = /\(new\)$/.test(card.name);
+    const suffix = isNew ? T(' (new)', '(新)') : T(' +1', ' +1');
+    return pa ? { name: T(pa.name, pa.nameZh || pa.name) + suffix, desc: T(pa.desc, pa.descZh || pa.desc) } : { name: card.name, desc: card.desc };
+  }
+  if (card.kind === 'gold') {
+    return { name: T('Gold Cache', '金币宝箱'), desc: T('+20 gold, banked at run end.', '+20 金币,在本局结束时结算。') };
+  }
+  return { name: card.name, desc: card.desc };
+}
+
 function renderDraft(sim, state, ctx, game) {
   ctx.save();
   ctx.fillStyle = 'rgba(6,7,12,0.84)';
@@ -1464,12 +1503,12 @@ function renderDraft(sim, state, ctx, game) {
   const top = game.h / 2 - cardH / 2 + 12;
 
   withGlow(ctx, Palette.accent, 24, () => {
-    text(ctx, 'LEVEL UP', game.w / 2, top - 78, {
+    text(ctx, T('LEVEL UP', '升级'), game.w / 2, top - 78, {
       size: Math.min(38, game.w * 0.045), color: Palette.accent,
       align: 'center', weight: 700, font: SERIF,
     });
   });
-  text(ctx, `LEVEL ${sim.player.level}  ·  CHOOSE ONE`, game.w / 2, top - 32, {
+  text(ctx, T(`LEVEL ${sim.player.level}  ·  CHOOSE ONE`, `等级 ${sim.player.level}  ·  选择一项`), game.w / 2, top - 32, {
     size: Type.label, color: Palette.dim, align: 'center', weight: 600,
   });
 
@@ -1499,16 +1538,17 @@ function renderDraft(sim, state, ctx, game) {
       size: Type.small, color: tone, align: 'center', baseline: 'middle', weight: 700,
     });
 
-    text(ctx, card.kind.toUpperCase(), x + cardW - 13, y + 20, {
+    text(ctx, CARD_KIND_LABEL[card.kind] || card.kind.toUpperCase(), x + cardW - 13, y + 20, {
       size: Type.micro, color: tone, align: 'right', weight: 700,
     });
 
     glyph(ctx, card.id, x + cardW / 2, y + 78, 19, tone);
 
-    const nameEnd = wrapText(ctx, card.name, x + cardW / 2, y + 106, cardW - 30, 21, {
+    const cardText = draftCardText(card);
+    const nameEnd = wrapText(ctx, cardText.name, x + cardW / 2, y + 106, cardW - 30, 21, {
       size: 17, color: Palette.ink, align: 'center', weight: 700, maxLines: 2,
     });
-    wrapText(ctx, card.desc, x + cardW / 2, nameEnd + 8, cardW - 32, 16, {
+    wrapText(ctx, cardText.desc, x + cardW / 2, nameEnd + 8, cardW - 32, 16, {
       size: Type.small, color: Palette.dim, align: 'center', maxLines: 4,
     });
 
@@ -1528,7 +1568,7 @@ function renderDraft(sim, state, ctx, game) {
   });
   ctx.restore();
 
-  text(ctx, 'PRESS 1 / 2 / 3  ·  OR CLICK A CARD', game.w / 2, top + cardH + 20, {
+  text(ctx, T('PRESS 1 / 2 / 3  ·  OR CLICK A CARD', '按 1 / 2 / 3 键 · 或点击卡片'), game.w / 2, top + cardH + 20, {
     size: Type.label, color: Palette.dim, align: 'center', weight: 600,
   });
 }
@@ -1539,13 +1579,16 @@ function renderEnd(state, ctx, game) {
   const s = state.endStats || {};
   const mm = Math.floor((s.time || 0) / 60), ss = Math.floor((s.time || 0) % 60);
   titleCard(ctx, game, {
-    title: s.won ? 'RUN COMPLETE' : 'OVERWHELMED',
-    tagline: `LEVEL ${s.level || 1}   ·   ${s.kills || 0} KILLS   ·   ${mm}:${String(ss).padStart(2, '0')}`,
+    title: s.won ? T('RUN COMPLETE', '通关成功') : T('OVERWHELMED', '力竭倒下'),
+    tagline: T(
+      `LEVEL ${s.level || 1}   ·   ${s.kills || 0} KILLS   ·   ${mm}:${String(ss).padStart(2, '0')}`,
+      `等级 ${s.level || 1}   ·   ${s.kills || 0} 击杀   ·   ${mm}:${String(ss).padStart(2, '0')}`,
+    ),
     lines: [
-      `+${s.gold || 0} gold banked`,
-      s.won ? 'The Swarm Mother is down.' : 'The swarm closed in.',
+      T(`+${s.gold || 0} gold banked`, `获得 +${s.gold || 0} 金币`),
+      s.won ? T('The Swarm Mother is down.', '虫群之母已被击败。') : T('The swarm closed in.', '虫群终将你吞没。'),
     ],
-    prompt: 'ENTER / SPACE — RETURN TO TITLE',
+    prompt: T('ENTER / SPACE — RETURN TO TITLE', '按回车 / 空格 — 返回标题'),
     t: game.t,
     accent: s.won ? Palette.accent : Palette.hot,
   });
@@ -1569,9 +1612,9 @@ function renderTitle(state, ctx, game) {
 
   const gold = game.store.get('gold', 0);
   hudStrip(ctx, game, { h: HUD_H });
-  stat(ctx, 16, 20, 'gold', gold, { color: Palette.warm });
-  stat(ctx, game.w / 2, 20, 'wins', game.store.get('wins', 0), { align: 'center' });
-  stat(ctx, game.w - 16, 20, 'best kills', game.store.get('bestKills', 0), { align: 'right' });
+  stat(ctx, 16, 20, T('gold', '金币'), gold, { color: Palette.warm });
+  stat(ctx, game.w / 2, 20, T('wins', '胜场'), game.store.get('wins', 0), { align: 'center' });
+  stat(ctx, game.w - 16, 20, T('best kills', '最高击杀'), game.store.get('bestKills', 0), { align: 'right' });
 
   const compact = game.h < 560;
   const tSize = clamp(game.w * 0.1, 34, 62);
@@ -1587,11 +1630,11 @@ function renderTitle(state, ctx, game) {
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = Palette.accent;
     ctx.font = `700 ${tSize}px ${SERIF}`;
-    ctx.fillText('SWARM', game.w / 2, y);
+    ctx.fillText(T('SWARM', '虫群'), game.w / 2, y);
     ctx.restore();
   });
   y += 22;
-  text(ctx, 'YOU ONLY MOVE. EVERYTHING ELSE FIRES ITSELF.', game.w / 2, y, {
+  text(ctx, T('YOU ONLY MOVE. EVERYTHING ELSE FIRES ITSELF.', '你只需移动,其余一切自动开火。'), game.w / 2, y, {
     size: Type.label, color: Palette.dim, align: 'center', weight: 600,
   });
   y += 26;
@@ -1602,18 +1645,18 @@ function renderTitle(state, ctx, game) {
   const ch = CHARACTERS[state.charIndex];
   const unlocked = isUnlocked(ch, game);
   panel(ctx, px, y, pw, charH, {
-    title: 'operative', radius: 8,
+    title: T('operative', '角色'), radius: 8,
     glowColor: unlocked ? Palette.accent : Palette.hot, glowBlur: 16,
   });
   drawArrow(ctx, px + 24, y + charH / 2 + 6, -1, state.charIndex > 0 ? Palette.ink : Palette.grid);
   drawArrow(ctx, px + pw - 24, y + charH / 2 + 6, 1, state.charIndex < CHARACTERS.length - 1 ? Palette.ink : Palette.grid);
-  text(ctx, ch.name.toUpperCase(), game.w / 2, y + (compact ? 28 : 34), {
+  text(ctx, T(ch.name, ch.nameZh || ch.name).toUpperCase(), game.w / 2, y + (compact ? 28 : 34), {
     size: compact ? 22 : 26, color: unlocked ? Palette.ink : Palette.dim,
     align: 'center', weight: 700, font: SERIF,
   });
-  const desc = unlocked ? ch.desc
-    : ch.unlock.kind === 'gold' ? `LOCKED — bank ${ch.unlock.amount} gold to recruit`
-    : `LOCKED — win ${ch.unlock.amount} run to recruit`;
+  const desc = unlocked ? T(ch.desc, ch.descZh || ch.desc)
+    : ch.unlock.kind === 'gold' ? T(`LOCKED — bank ${ch.unlock.amount} gold to recruit`, `未解锁 — 累计 ${ch.unlock.amount} 金币即可招募`)
+    : T(`LOCKED — win ${ch.unlock.amount} run to recruit`, `未解锁 — 通关 ${ch.unlock.amount} 次即可招募`);
   wrapText(ctx, desc, game.w / 2, y + (compact ? 58 : 68), pw - 100, 16, {
     size: Type.small, color: unlocked ? Palette.dim : Palette.hot, align: 'center', maxLines: 2,
   });
@@ -1626,18 +1669,18 @@ function renderTitle(state, ctx, game) {
   y += charH + 12;
 
   const pulse = 0.5 + 0.5 * Math.sin(state.titleT * 3.4);
-  text(ctx, unlocked ? 'PRESS SPACE TO DEPLOY' : 'LOCKED — CHOOSE ANOTHER OPERATIVE', game.w / 2, y, {
+  text(ctx, unlocked ? T('PRESS SPACE TO DEPLOY', '按空格键出击') : T('LOCKED — CHOOSE ANOTHER OPERATIVE', '未解锁 — 请选择其他角色'), game.w / 2, y, {
     size: Type.body, color: unlocked ? Palette.warm : Palette.hot,
     align: 'center', weight: 700, alpha: 0.45 + pulse * 0.55,
   });
   y += 22;
 
   // --- armory
-  panel(ctx, px, y, pw, armH, { title: 'armory', radius: 8 });
+  panel(ctx, px, y, pw, armH, { title: T('armory', '军械库'), radius: 8 });
   const cols = [
-    { key: 'up_dmg', k: 'Q', label: 'damage', id: 'might' },
-    { key: 'up_speed', k: 'E', label: 'speed', id: 'haste' },
-    { key: 'up_hp', k: 'R', label: 'max hull', id: 'vigor' },
+    { key: 'up_dmg', k: 'Q', label: T('damage', '伤害'), id: 'might' },
+    { key: 'up_speed', k: 'E', label: T('speed', '速度'), id: 'haste' },
+    { key: 'up_hp', k: 'R', label: T('max hull', '最大船体'), id: 'vigor' },
   ];
   for (let i = 0; i < cols.length; i++) {
     const c = cols[i];
@@ -1654,7 +1697,7 @@ function renderTitle(state, ctx, game) {
     });
   }
 
-  text(ctx, 'WASD / ARROWS TO MOVE  ·  OR HOLD THE POINTER TO STEER  ·  1 2 3 TO DRAFT',
+  text(ctx, T('WASD / ARROWS TO MOVE  ·  OR HOLD THE POINTER TO STEER  ·  1 2 3 TO DRAFT', 'WASD / 方向键移动  ·  或按住指针操控  ·  1 2 3 选择升级'),
     game.w / 2, game.h - 20, { size: Type.micro, color: Palette.dim, align: 'center', alpha: 0.7 });
 }
 

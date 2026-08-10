@@ -11,7 +11,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store, RNG,
   clamp, approach, text, allFinite, TAU,
   Type, HUD_H, withGlow, stat, hudStrip, panel, meter, orb, vignette, titleCard,
-  T, mountLangToggle,
+  T, mountLangToggle, currentLang,
 } from '../../shared/kit.js';
 
 import {
@@ -40,6 +40,15 @@ const MEDALS = [
   [1, 'BOGEY', Palette.dim],
   [2, 'DOUBLE BOGEY', Palette.hot],
 ];
+
+const MEDAL_ZH = {
+  ALBATROSS: '信天翁',
+  EAGLE: '老鹰',
+  BIRDIE: '小鸟球',
+  PAR: '标准杆',
+  BOGEY: '柏忌',
+  'DOUBLE BOGEY': '双柏忌',
+};
 
 function medalFor(strokes, par) {
   const d = strokes - par;
@@ -233,9 +242,13 @@ function finishHole(s) {
   if (isBest) { s.bestHoles[s.holeIndex] = s.strokes; Store.set('hole' + s.holeIndex, s.strokes); }
   s.phase = 'sunk';
   s.resultT = 2.4;
+  const strokeWordEn = `${s.strokes} stroke${s.strokes === 1 ? '' : 's'}`;
+  const strokeWordZh = `${s.strokes} 杆`;
+  const bestWordEn = isBest ? ' · personal best' : '';
+  const bestWordZh = isBest ? ' · 个人最佳' : '';
   s.banner = {
-    title: m[1],
-    sub: `${s.strokes} stroke${s.strokes === 1 ? '' : 's'} · par ${par}${isBest ? ' · personal best' : ''}`,
+    title: T(m[1], MEDAL_ZH[m[1]] || m[1]),
+    sub: T(`${strokeWordEn} · par ${par}${bestWordEn}`, `${strokeWordZh} · 标准杆 ${par}${bestWordZh}`),
     color: m[2],
     t: 0,
   };
@@ -317,7 +330,7 @@ function update(s, dt, g) {
   if (I.justPressed('r') && s.phase !== 'sunk') {
     s.totalStrokes -= s.strokes;
     loadHole(s, g, s.holeIndex, true);
-    s.message = 'HOLE RESET';
+    s.message = T('HOLE RESET', '本洞重置');
     s.messageT = 1.4;
   }
   if (I.justPressed('n') && I.isDown('shift')) { // dev skip
@@ -359,7 +372,7 @@ function update(s, dt, g) {
       if (I.pointerReleased) {
         s.drag.active = false;
         if (s.drag.pull > 10) beginShot(s, g, s.drag.angle, s.drag.power);
-        else { s.message = 'PULL FURTHER BACK'; s.messageT = 1.4; }
+        else { s.message = T('PULL FURTHER BACK', '再往后拉一点'); s.messageT = 1.4; }
         s.preview = null;
       }
     }
@@ -385,15 +398,15 @@ function update(s, dt, g) {
       s.lastTrail = s.sim.trail.slice();
       finishHole(s);
     } else if (s.sim.status === 'crashed') {
-      const what = s.sim.crashType === 'blackhole' ? 'SWALLOWED BY THE BLACK HOLE'
-        : s.sim.crashType === 'repulsor' ? 'SMACKED THE REPULSOR CORE'
-        : s.sim.crashType === 'moon' ? 'CRASHED INTO A MOON'
-        : 'CRASHED INTO A PLANET';
+      const what = s.sim.crashType === 'blackhole' ? T('SWALLOWED BY THE BLACK HOLE', '被黑洞吞噬')
+        : s.sim.crashType === 'repulsor' ? T('SMACKED THE REPULSOR CORE', '撞上了斥力核心')
+        : s.sim.crashType === 'moon' ? T('CRASHED INTO A MOON', '撞上了卫星')
+        : T('CRASHED INTO A PLANET', '撞上了行星');
       failShot(s, what);
     } else if (s.sim.status === 'oob') {
-      failShot(s, 'LEFT THE SYSTEM');
+      failShot(s, T('LEFT THE SYSTEM', '飞出了星系'));
     } else if (s.sim.status === 'lost') {
-      failShot(s, 'LOST IN SPACE');
+      failShot(s, T('LOST IN SPACE', '迷失在太空中'));
     }
   }
 
@@ -835,12 +848,13 @@ function drawHud(s, ctx, g) {
 
   // LEFT — where you are in the round, with the hole name as secondary flavour
   const holeVal = `${num}/${HOLE_COUNT}`;
-  stat(ctx, pad, labelY, 'HOLE', holeVal, { color: Palette.accent, valueSize: vSize });
+  stat(ctx, pad, labelY, T('HOLE', '球洞'), holeVal, { color: Palette.accent, valueSize: vSize });
   if (wide) {
     const nameX = pad + measure(ctx, holeVal, vSize) + 18;
     const nameMax = cx - 70 - nameX;
     if (nameMax > 56) {
-      text(ctx, fitText(ctx, hole.name.toUpperCase(), nameMax, Type.label), nameX, valueY, {
+      const holeName = T(hole.name, hole.nameZh || hole.name);
+      text(ctx, fitText(ctx, currentLang() === 'zh' ? holeName : holeName.toUpperCase(), nameMax, Type.label), nameX, valueY, {
         size: Type.label, color: Palette.dim, weight: 600, baseline: 'alphabetic',
       });
     }
@@ -851,10 +865,10 @@ function drawHud(s, ctx, g) {
   const hasBest = best !== null && best !== undefined;
   if (!tiny) {
     if (hasBest && mid) {
-      stat(ctx, cx - 38, labelY, 'PAR', hole.par, { align: 'center', valueSize: vSize });
-      stat(ctx, cx + 38, labelY, 'BEST', best, { align: 'center', valueSize: vSize, color: Palette.accent2 });
+      stat(ctx, cx - 38, labelY, T('PAR', '标准杆'), hole.par, { align: 'center', valueSize: vSize });
+      stat(ctx, cx + 38, labelY, T('BEST', '最佳'), best, { align: 'center', valueSize: vSize, color: Palette.accent2 });
     } else {
-      stat(ctx, cx, labelY, 'PAR', hole.par, { align: 'center', valueSize: vSize });
+      stat(ctx, cx, labelY, T('PAR', '标准杆'), hole.par, { align: 'center', valueSize: vSize });
     }
   }
 
@@ -863,14 +877,14 @@ function drawHud(s, ctx, g) {
   const vs = s.totalStrokes - parSoFar;
   const rx = g.w - pad;
   if (narrow) {
-    stat(ctx, rx, labelY, 'STROKES', s.strokes, { align: 'right', color: Palette.warm, valueSize: vSize });
+    stat(ctx, rx, labelY, T('STROKES', '杆数'), s.strokes, { align: 'right', color: Palette.warm, valueSize: vSize });
   } else {
     const roundVal = `${s.totalStrokes} ${rel(vs)}`;
-    stat(ctx, rx, labelY, 'ROUND', roundVal, {
+    stat(ctx, rx, labelY, T('ROUND', '本轮'), roundVal, {
       align: 'right', valueSize: vSize,
       color: vs < 0 ? Palette.accent : vs > 0 ? Palette.hot : Palette.ink,
     });
-    stat(ctx, rx - measure(ctx, roundVal, vSize) - 30, labelY, 'STROKES', s.strokes, {
+    stat(ctx, rx - measure(ctx, roundVal, vSize) - 30, labelY, T('STROKES', '杆数'), s.strokes, {
       align: 'right', color: Palette.warm, valueSize: vSize,
     });
   }
@@ -880,11 +894,11 @@ function drawHud(s, ctx, g) {
   const barMid = barY + BOT_H / 2;
 
   if (!narrow) {
-    text(ctx, `ROUND PAR ${TOTAL_PAR}` + (s.bestRound !== null ? `  ·  BEST ${s.bestRound}` : ''),
+    text(ctx, T(`ROUND PAR ${TOTAL_PAR}`, `本轮标准杆 ${TOTAL_PAR}`) + (s.bestRound !== null ? T(`  ·  BEST ${s.bestRound}`, `  ·  最佳 ${s.bestRound}`) : ''),
       pad, barMid, { size: Type.micro, color: Palette.dim, baseline: 'middle', alpha: 0.75 });
   }
   if (mid) {
-    text(ctx, 'R RESET  ·  SPACE FAST-FORWARD', rx, barMid, {
+    text(ctx, T('R RESET  ·  SPACE FAST-FORWARD', 'R 重置  ·  SPACE 快进'), rx, barMid, {
       size: Type.micro, color: Palette.dim, align: 'right', baseline: 'middle', alpha: 0.55,
     });
   }
@@ -914,14 +928,14 @@ function drawHud(s, ctx, g) {
     });
   } else if (s.hintT > 0 && s.phase === 'aim') {
     const a = clamp(s.hintT / 1.0, 0, 1);
-    text(ctx, hole.hint, cx, lineY, { size: hintSize, color: Palette.dim, align: 'center', alpha: a });
+    text(ctx, T(hole.hint, hole.hintZh || hole.hint), cx, lineY, { size: hintSize, color: Palette.dim, align: 'center', alpha: a });
   } else if (s.phase === 'aim' && !s.drag.active) {
     const p = 0.5 + 0.5 * Math.sin(s.t * 2.6);
-    text(ctx, 'DRAG BACK AND RELEASE TO LAUNCH', cx, lineY, {
+    text(ctx, T('DRAG BACK AND RELEASE TO LAUNCH', '向后拖拽然后松手发射'), cx, lineY, {
       size: Type.label, color: Palette.dim, align: 'center', weight: 600, alpha: 0.32 + p * 0.34,
     });
   } else if (s.phase === 'fly') {
-    text(ctx, 'HOLD SPACE TO FAST-FORWARD', cx, lineY, {
+    text(ctx, T('HOLD SPACE TO FAST-FORWARD', '按住 SPACE 快进'), cx, lineY, {
       size: Type.micro, color: Palette.dim, align: 'center', alpha: 0.5,
     });
   }
@@ -931,7 +945,7 @@ function drawHud(s, ctx, g) {
     const col = frac > 0.92 ? Palette.hot : Palette.warm;
     const mw = Math.min(300, g.w * 0.34);
     meter(ctx, cx - mw / 2, lineY - 14, mw, 6, frac, { color: col });
-    text(ctx, `${Math.round(frac * 100)}% POWER`, cx, lineY - 36, {
+    text(ctx, T(`${Math.round(frac * 100)}% POWER`, `${Math.round(frac * 100)}% 力度`), cx, lineY - 36, {
       size: Type.small, color: col, align: 'center', weight: 700,
     });
   }
@@ -939,23 +953,23 @@ function drawHud(s, ctx, g) {
 
 function drawIntro(s, ctx, g) {
   const roomy = g.h >= 470, mid = g.h >= 360;
-  const lines = ['Launch a probe. Real gravity does the rest.'];
+  const lines = [T('Launch a probe. Real gravity does the rest.', '发射探测器,剩下的交给真实的引力。')];
   if (roomy) {
-    lines.push('Slingshot round planets, dodge black holes,');
-    lines.push('dive through wormholes. Sink it under par.');
+    lines.push(T('Slingshot round planets, dodge black holes,', '绕行星借力弹弓,躲开黑洞,'));
+    lines.push(T('dive through wormholes. Sink it under par.', '穿越虫洞,力争杆数低于标准杆。'));
   } else if (mid) {
-    lines.push('Slingshot, dodge, warp. Sink it under par.');
+    lines.push(T('Slingshot, dodge, warp. Sink it under par.', '借力、躲避、跃迁,低于标准杆入洞。'));
   }
   lines.push('');
-  lines.push('DRAG back from the probe, release to fire');
-  if (mid) lines.push('R reset hole  ·  SPACE fast-forward');
-  lines.push(`${HOLE_COUNT} HOLES  ·  TOTAL PAR ${TOTAL_PAR}`);
+  lines.push(T('DRAG back from the probe, release to fire', '从探测器处向后拖拽,松手发射'));
+  if (mid) lines.push(T('R reset hole  ·  SPACE fast-forward', 'R 重置本洞  ·  SPACE 快进'));
+  lines.push(T(`${HOLE_COUNT} HOLES  ·  TOTAL PAR ${TOTAL_PAR}`, `${HOLE_COUNT} 洞  ·  总标准杆 ${TOTAL_PAR}`));
 
   titleCard(ctx, g, {
-    title: 'ORBITAL',
-    tagline: 'N-BODY GRAVITY GOLF',
+    title: T('ORBITAL', '轨道'),
+    tagline: T('N-BODY GRAVITY GOLF', '多体引力高尔夫'),
     lines,
-    prompt: 'DRAG TO LAUNCH',
+    prompt: T('DRAG TO LAUNCH', '拖拽以发射'),
     t: s.t,
     accent: Palette.accent,
   });
@@ -976,7 +990,7 @@ function drawBanner(s, ctx, g) {
   text(ctx, s.banner.sub, g.w / 2, cy + size + 8 - rise, {
     size: Type.small, color: Palette.ink, align: 'center', alpha: a * 0.9,
   });
-  text(ctx, 'ENTER for the next hole', g.w / 2, cy + size + 30 - rise, {
+  text(ctx, T('ENTER for the next hole', '按 ENTER 进入下一洞'), g.w / 2, cy + size + 30 - rise, {
     size: Type.label, color: Palette.dim, align: 'center', alpha: a * 0.8,
   });
 }
@@ -986,13 +1000,13 @@ function drawRound(s, ctx, g) {
   const vs = s.totalStrokes - TOTAL_PAR;
 
   titleCard(ctx, g, {
-    title: 'ROUND COMPLETE',
-    tagline: `${s.totalStrokes} STROKES  ·  PAR ${TOTAL_PAR}  ·  ${rel(vs)}`,
+    title: T('ROUND COMPLETE', '本轮结束'),
+    tagline: T(`${s.totalStrokes} STROKES  ·  PAR ${TOTAL_PAR}  ·  ${rel(vs)}`, `${s.totalStrokes} 杆  ·  标准杆 ${TOTAL_PAR}  ·  ${rel(vs)}`),
     lines: [
-      s.roundBest ? 'NEW BEST ROUND' : `BEST ROUND ${s.bestRound}`,
-      `${s.roundsPlayed} round${s.roundsPlayed === 1 ? '' : 's'} played`,
+      s.roundBest ? T('NEW BEST ROUND', '新的最佳纪录') : T(`BEST ROUND ${s.bestRound}`, `最佳纪录 ${s.bestRound}`),
+      T(`${s.roundsPlayed} round${s.roundsPlayed === 1 ? '' : 's'} played`, `已完成 ${s.roundsPlayed} 轮`),
     ],
-    prompt: 'ENTER to play another round',
+    prompt: T('ENTER to play another round', '按 ENTER 再玩一轮'),
     t: s.t,
     accent: vs <= 0 ? Palette.accent : Palette.warm,
   });
@@ -1010,7 +1024,7 @@ function drawRound(s, ctx, g) {
   if (g.w < 470 || cardTop + cardH > g.h - 12) return;
 
   panel(ctx, cx - cardW / 2, cardTop, cardW, cardH, {
-    radius: 6, title: 'SCORECARD', glowColor: 'rgba(0,0,0,0.55)', glowBlur: 30,
+    radius: 6, title: T('SCORECARD', '计分卡'), glowColor: 'rgba(0,0,0,0.55)', glowBlur: 30,
   });
 
   const colW = (cardW - 44) / 9;
@@ -1031,7 +1045,7 @@ function drawRound(s, ctx, g) {
       });
     }
   }
-  text(ctx, 'HOLE / PAR / SCORE', cx, cardTop + padTop + 2 * rowH + 2, {
+  text(ctx, T('HOLE / PAR / SCORE', '球洞 / 标准杆 / 杆数'), cx, cardTop + padTop + 2 * rowH + 2, {
     size: Type.micro, color: Palette.dim, align: 'center', alpha: 0.6,
   });
 }

@@ -297,21 +297,21 @@ function layout(g, s) {
   if (narrow) {
     const cw = Math.max(70, Math.round(avail * 0.42));
     const sw = Math.max(44, Math.round((avail - cw - pad * 2) / 2));
-    buttons.push({ id: 'confirm', x: pad, y: y1, w: cw, h: btnH, label: 'CONFIRM' });
-    buttons.push({ id: 'clear', x: pad + cw + pad, y: y1, w: sw, h: btnH, label: 'CLEAR' });
-    buttons.push({ id: 'new', x: pad + cw + pad + sw + pad, y: y1, w: sw, h: btnH, label: 'NEW' });
+    buttons.push({ id: 'confirm', x: pad, y: y1, w: cw, h: btnH, label: T('CONFIRM', '确认') });
+    buttons.push({ id: 'clear', x: pad + cw + pad, y: y1, w: sw, h: btnH, label: T('CLEAR', '清空') });
+    buttons.push({ id: 'new', x: pad + cw + pad + sw + pad, y: y1, w: sw, h: btnH, label: T('NEW', '新局') });
     const tw = Math.max(40, Math.round((avail - pad * 3) / 4));
-    for (let i = 0; i < 3; i++) buttons.push({ id: 'tier' + i, x: pad + i * (tw + pad), y: y2, w: tw, h: btnH, label: TIERS[i].label.slice(0, 5) });
-    buttons.push({ id: 'view', x: pad + 3 * (tw + pad), y: y2, w: tw, h: btnH, label: s.view ? 'ROSTER' : 'PAPERS' });
+    for (let i = 0; i < 3; i++) buttons.push({ id: 'tier' + i, x: pad + i * (tw + pad), y: y2, w: tw, h: btnH, label: T(TIERS[i].label, TIERS[i].labelZh || TIERS[i].label).slice(0, 5) });
+    buttons.push({ id: 'view', x: pad + 3 * (tw + pad), y: y2, w: tw, h: btnH, label: s.view ? T('ROSTER', '名册') : T('PAPERS', '文书') });
   } else {
     const cw = clamp(Math.round(w * 0.2), 120, 210);
     const sw = Math.max(58, Math.round(74 * S));
-    buttons.push({ id: 'confirm', x: pad, y: y1, w: cw, h: btnH, label: 'CONFIRM  ⏎' });
-    buttons.push({ id: 'clear', x: pad + cw + pad, y: y1, w: sw, h: btnH, label: 'CLEAR' });
-    buttons.push({ id: 'new', x: pad + cw + pad * 2 + sw, y: y1, w: sw + Math.round(18 * S), h: btnH, label: 'NEW SEED' });
+    buttons.push({ id: 'confirm', x: pad, y: y1, w: cw, h: btnH, label: T('CONFIRM  ⏎', '确认  ⏎') });
+    buttons.push({ id: 'clear', x: pad + cw + pad, y: y1, w: sw, h: btnH, label: T('CLEAR', '清空') });
+    buttons.push({ id: 'new', x: pad + cw + pad * 2 + sw, y: y1, w: sw + Math.round(18 * S), h: btnH, label: T('NEW SEED', '新种子') });
     const tw = Math.max(56, Math.round(84 * S));
     const x0 = w - pad - tw * 3 - pad * 2;
-    for (let i = 0; i < 3; i++) buttons.push({ id: 'tier' + i, x: x0 + i * (tw + pad), y: y1, w: tw, h: btnH, label: TIERS[i].label });
+    for (let i = 0; i < 3; i++) buttons.push({ id: 'tier' + i, x: x0 + i * (tw + pad), y: y1, w: tw, h: btnH, label: T(TIERS[i].label, TIERS[i].labelZh || TIERS[i].label) });
   }
 
   return { S, pad, narrow, headH, footH, btnH, roster, papers, colHeadH, rowH, gridTop, bnW, colStride, colGap, cell, berthTag, list, listHeadH, buttons, A, w, h };
@@ -988,26 +988,27 @@ function drawIntro(s, ctx, g, L) {
   ctx.fillRect(0, 0, g.w, g.h);
   const cx = g.w / 2;
   let y = g.h / 2 - 118 * S;
-  text(ctx, 'THE NINE', cx, y, { size: 34 * S, color: Palette.accent, align: 'center', weight: 700 });
+  text(ctx, T('THE NINE', '九人'), cx, y, { size: 34 * S, color: Palette.accent, align: 'center', weight: 700 });
   y += 34 * S;
   text(ctx, SHIP.line, cx, y, { size: 12 * S, color: Palette.dim, align: 'center' });
   y += 34 * S;
-  text(ctx, 'Nine berths. Nine names. Nine ends.', cx, y, { size: 14 * S, color: Palette.ink, align: 'center', weight: 600 });
+  text(ctx, T('Nine berths. Nine names. Nine ends.', '九个铺位。九个姓名。九种结局。'), cx, y, { size: 14 * S, color: Palette.ink, align: 'center', weight: 600 });
   y += 22 * S;
-  text(ctx, 'The papers survive. The crew does not. Work out who slept where.', cx, y, { size: 12 * S, color: Palette.dim, align: 'center' });
+  text(ctx, T('The papers survive. The crew does not. Work out who slept where.', '文书留了下来,船员没有。查清谁睡在哪里。'), cx, y, { size: 12 * S, color: Palette.dim, align: 'center' });
   y += 34 * S;
-  text(ctx, 'CONFIRM three or more correct at once and they lock in FOREVER.', cx, y, { size: 12.5 * S, color: Palette.warm, align: 'center', weight: 600 });
+  text(ctx, T('CONFIRM three or more correct at once and they lock in FOREVER.', '一次确认三项或以上正确,它们将永久锁定。'), cx, y, { size: 12.5 * S, color: Palette.warm, align: 'center', weight: 600 });
   y += 20 * S;
-  text(ctx, 'Fewer than three, and nothing is revealed. Guessing gets you nowhere.', cx, y, { size: 12 * S, color: Palette.dim, align: 'center' });
+  text(ctx, T('Fewer than three, and nothing is revealed. Guessing gets you nowhere.', '少于三项则什么都不会揭示。瞎猜没有用。'), cx, y, { size: 12 * S, color: Palette.dim, align: 'center' });
   y += 34 * S;
-  text(ctx, 'CLICK a cell to assign  ·  ENTER to confirm  ·  1 2 3 difficulty  ·  N new seed', cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center' });
+  text(ctx, T('CLICK a cell to assign  ·  ENTER to confirm  ·  1 2 3 difficulty  ·  N new seed', '点击格子分配  ·  ENTER 确认  ·  1 2 3 难度  ·  N 换种子'), cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center' });
   y += 18 * S;
-  text(ctx, 'Click a berth number to filter the papers  ·  R clears  ·  ESC backs out', cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center', alpha: 0.75 });
+  text(ctx, T('Click a berth number to filter the papers  ·  R clears  ·  ESC backs out', '点击铺位编号筛选文书  ·  R 清空  ·  ESC 退出'), cx, y, { size: 11.5 * S, color: Palette.dim, align: 'center', alpha: 0.75 });
   y += 36 * S;
   const p = 0.5 + 0.5 * Math.sin(g.t * 3);
-  text(ctx, 'PRESS SPACE', cx, y, { size: 14 * S, color: Palette.warm, align: 'center', weight: 700, alpha: 0.4 + p * 0.6 });
+  text(ctx, T('PRESS SPACE', '按空格键开始'), cx, y, { size: 14 * S, color: Palette.warm, align: 'center', weight: 700, alpha: 0.4 + p * 0.6 });
   y += 26 * S;
-  text(ctx, `SEED ${s.seedStr} · ${TIERS[s.tierIndex].label} · ${TIERS[s.tierIndex].blurb}`, cx, y, {
+  text(ctx, T(`SEED ${s.seedStr} · ${TIERS[s.tierIndex].label} · ${TIERS[s.tierIndex].blurb}`,
+    `种子 ${s.seedStr} · ${T(TIERS[s.tierIndex].label, TIERS[s.tierIndex].labelZh || TIERS[s.tierIndex].label)} · ${T(TIERS[s.tierIndex].blurb, TIERS[s.tierIndex].blurbZh || TIERS[s.tierIndex].blurb)}`), cx, y, {
     size: 10.5 * S, color: Palette.dim, align: 'center', alpha: 0.7,
   });
 }

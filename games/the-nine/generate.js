@@ -75,7 +75,9 @@ export const TIERS = [
   {
     id: 'cadet',
     label: 'CADET',
+    labelZh: '见习',
     blurb: 'Two ledgers — names and roles. The papers speak plainly.',
+    blurbZh: '两本记录——姓名与职务。文书说得很直白。',
     attrs: ['name', 'role'],
     pool: 240, start: 8, stepAdd: 3,
     weights: [['AT', 26], ['SAME', 22], ['ADJ', 14], ['BEFORE', 12], ['DIST', 8], ['NOTSAME', 8], ['BETWEEN', 4], ['NADJ', 3], ['DISTMIN', 3]],
@@ -86,7 +88,9 @@ export const TIERS = [
   {
     id: 'officer',
     label: 'OFFICER',
+    labelZh: '军官',
     blurb: 'Three ledgers — names, roles, and how each one ended.',
+    blurbZh: '三本记录——姓名、职务,以及各自的结局。',
     attrs: ['name', 'role', 'fate'],
     pool: 340, start: 14, stepAdd: 2,
     weights: [['AT', 16], ['SAME', 16], ['ADJ', 13], ['BEFORE', 13], ['DIST', 10], ['NOTSAME', 12], ['BETWEEN', 8], ['NADJ', 6], ['DISTMIN', 6]],
@@ -97,7 +101,9 @@ export const TIERS = [
   {
     id: 'archivist',
     label: 'ARCHIVIST',
+    labelZh: '档案员',
     blurb: 'Three ledgers, and nothing stated outright.',
+    blurbZh: '三本记录,却无一直言。',
     attrs: ['name', 'role', 'fate'],
     pool: 360, start: 16, stepAdd: 2,
     weights: [['AT', 14], ['SAME', 13], ['ADJ', 14], ['BEFORE', 15], ['DIST', 12], ['NOTSAME', 12], ['BETWEEN', 9], ['NADJ', 6], ['DISTMIN', 5]],

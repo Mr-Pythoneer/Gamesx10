@@ -14,7 +14,9 @@
 export const LEVELS = [
   {
     name: 'Bound',
+    nameZh: '归位',
     hint: 'One set of keys. Two of you. Get both to the exit.',
+    hintZh: '一组按键,两个你。让两个都到达出口。',
     worlds: [
       {
         flipX: false,
@@ -45,7 +47,9 @@ export const LEVELS = [
 
   {
     name: 'Gap',
+    nameZh: '缺口',
     hint: 'Jump is the one thing you both agree on.',
+    hintZh: '跳跃是你们唯一达成一致的事。',
     worlds: [
       {
         flipX: false,
@@ -76,7 +80,9 @@ export const LEVELS = [
 
   {
     name: 'Offset',
+    nameZh: '错位',
     hint: 'The holes no longer line up. Find the window that clears both.',
+    hintZh: '两边的坑不再对齐。找到能同时越过两边的时机。',
     worlds: [
       {
         flipX: false,
@@ -107,7 +113,9 @@ export const LEVELS = [
 
   {
     name: 'Spike',
+    nameZh: '尖刺',
     hint: 'Spikes kill instantly. Both of you die when either of you does.',
+    hintZh: '尖刺瞬间致命。只要有一个你死了,两个都算死。',
     worlds: [
       {
         flipX: false,
@@ -138,7 +146,9 @@ export const LEVELS = [
 
   {
     name: 'Stair',
+    nameZh: '阶梯',
     hint: 'One of you climbs. The other has to survive the same jumps.',
+    hintZh: '一个你在攀爬。另一个必须在同样的跳跃中活下来。',
     worlds: [
       {
         flipX: false,
@@ -169,7 +179,9 @@ export const LEVELS = [
 
   {
     name: 'Ceiling',
+    nameZh: '天花板',
     hint: 'Low roof on one side. Jump in the wrong place and you crack your head.',
+    hintZh: '一侧的屋顶很低。跳错地方就会撞破头。',
     worlds: [
       {
         flipX: false,
@@ -200,7 +212,9 @@ export const LEVELS = [
 
   {
     name: 'Pillar',
+    nameZh: '石柱',
     hint: 'Nothing is symmetric any more.',
+    hintZh: '一切都不再对称了。',
     worlds: [
       {
         flipX: false,
@@ -231,7 +245,9 @@ export const LEVELS = [
 
   {
     name: 'Upside',
+    nameZh: '倒悬',
     hint: 'A third you, and gravity has opinions. Jump pushes them at the ceiling.',
+    hintZh: '第三个你,而且重力有自己的想法。跳跃会把他推向天花板。',
     worlds: [
       {
         flipX: false,
@@ -275,7 +291,9 @@ export const LEVELS = [
 
   {
     name: 'Inverted',
+    nameZh: '倒转',
     hint: 'Three of you now. The ceiling world has a gap too.',
+    hintZh: '现在有三个你了。天花板世界里也有一个缺口。',
     worlds: [
       {
         flipX: false,
@@ -319,7 +337,9 @@ export const LEVELS = [
 
   {
     name: 'Bindfast',
+    nameZh: '速缚',
     hint: 'Two of you go one way, one goes the other, and the ceiling has a hole.',
+    hintZh: '两个你走一个方向,另一个走反方向,天花板上还有个洞。',
     worlds: [
       {
         flipX: false,

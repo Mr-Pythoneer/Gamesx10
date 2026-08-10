@@ -727,7 +727,7 @@ function drawHud(s, ctx, g, L) {
     const a = clamp(1 - sim.judgeAge / 0.5, 0, 1);
     const rise = (1 - a) * 26;
     const perfect = sim.lastJudge === 'perfect';
-    text(ctx, perfect ? 'PERFECT' : 'GOOD',
+    text(ctx, perfect ? T('PERFECT', '完美') : T('GOOD', '良好'),
       L.playerX, L.groundY - (86 + 44 * u) - rise, {
         size: perfect ? Type.value : Type.body,
         color: perfect ? Palette.accent : Palette.accent2,
@@ -751,7 +751,7 @@ function drawHud(s, ctx, g, L) {
       size: Type.small, color: Palette.accent, align: 'center', baseline: 'alphabetic', weight: 700, alpha: a,
     });
   }
-  if (s.muted) text(ctx, 'MUTED', 18, g.h - 20, { size: Type.micro, color: Palette.dim });
+  if (s.muted) text(ctx, T('MUTED', '已静音'), 18, g.h - 20, { size: Type.micro, color: Palette.dim });
 }
 
 function drawOverlays(s, ctx, g, L) {
@@ -763,17 +763,21 @@ function drawOverlays(s, ctx, g, L) {
 
   if (s.phase === 'intro') {
     titleCard(ctx, g, {
-      title: 'PULSE',
-      tagline: narrow ? 'The seed writes the song.' : 'The seed writes the song. The song writes the level.',
+      title: T('PULSE', '脉冲'),
+      tagline: narrow
+        ? T('The seed writes the song.', '种子谱写乐曲。')
+        : T('The seed writes the song. The song writes the level.', '种子谱写乐曲,乐曲生成关卡。'),
       lines: [
-        'SPACE / CLICK — jump  (hold for height)',
-        'SPACE again midair — slam down and slide under',
+        T('SPACE / CLICK — jump  (hold for height)', 'SPACE / 点击 — 跳跃(按住跳更高)'),
+        T('SPACE again midair — slam down and slide under', '空中再按 SPACE — 下砸并滑行躲避'),
         '',
-        `SEED ${s.seed}  ·  ${song.bpm} BPM  ·  ${song.key} ${song.scale}`,
-        `${song.notes.length} notes  ·  ${sim.chart.length} obstacles  ·  ${Math.round(song.duration)}s`,
-        'S seed  ·  N re-roll  ·  C copy  ·  R restart  ·  M mute',
+        T(`SEED ${s.seed}  ·  ${song.bpm} BPM  ·  ${song.key} ${song.scale}`,
+          `种子 ${s.seed}  ·  ${song.bpm} BPM  ·  ${song.key} ${song.scale}`),
+        T(`${song.notes.length} notes  ·  ${sim.chart.length} obstacles  ·  ${Math.round(song.duration)}s`,
+          `${song.notes.length} 个音符  ·  ${sim.chart.length} 个障碍  ·  ${Math.round(song.duration)} 秒`),
+        T('S seed  ·  N re-roll  ·  C copy  ·  R restart  ·  M mute', 'S 输入种子  ·  N 换一个  ·  C 复制  ·  R 重开  ·  M 静音'),
       ],
-      prompt: 'PRESS SPACE',
+      prompt: T('PRESS SPACE', '按空格键开始'),
       t: s.introT,
       accent: Palette.accent,
     });
@@ -785,19 +789,22 @@ function drawOverlays(s, ctx, g, L) {
     const acc = total ? Math.round((sim.perfect / total) * 100) : 0;
     // The three leading blank lines reserve the slot the score figure lands in.
     titleCard(ctx, g, {
-      title: won ? 'TRACK CLEARED' : 'RUN ENDED',
+      title: won ? T('TRACK CLEARED', '曲目通关') : T('RUN ENDED', '本局结束'),
       tagline: null,
       lines: [
         '', '', '',
-        `${sim.perfect} PERFECT  ·  ${sim.good} GOOD  ·  ${sim.missed} MISSED  ·  ${acc}%`,
-        `BEST COMBO ${sim.maxCombo}  ·  ${sim.cleared}/${sim.chart.length} OBSTACLES CLEARED`,
-        `SEED ${s.seed}  ·  BEST ${Math.max(s.seedBest, sim.score)}  ·  ALL-TIME ${Math.max(s.best, sim.score)}`,
+        T(`${sim.perfect} PERFECT  ·  ${sim.good} GOOD  ·  ${sim.missed} MISSED  ·  ${acc}%`,
+          `${sim.perfect} 完美  ·  ${sim.good} 良好  ·  ${sim.missed} 失误  ·  ${acc}%`),
+        T(`BEST COMBO ${sim.maxCombo}  ·  ${sim.cleared}/${sim.chart.length} OBSTACLES CLEARED`,
+          `最高连击 ${sim.maxCombo}  ·  已通过 ${sim.cleared}/${sim.chart.length} 个障碍`),
+        T(`SEED ${s.seed}  ·  BEST ${Math.max(s.seedBest, sim.score)}  ·  ALL-TIME ${Math.max(s.best, sim.score)}`,
+          `种子 ${s.seed}  ·  本种子最佳 ${Math.max(s.seedBest, sim.score)}  ·  历史最佳 ${Math.max(s.best, sim.score)}`),
       ],
-      prompt: 'SPACE retry  ·  N new seed  ·  S type a seed  ·  C copy',
+      prompt: T('SPACE retry  ·  N new seed  ·  S type a seed  ·  C copy', 'SPACE 重试  ·  N 换种子  ·  S 输入种子  ·  C 复制'),
       t: s.introT,
       accent: won ? Palette.accent : Palette.hot,
     });
-    stat(ctx, cx, g.h / 2 - 44, 'FINAL SCORE', String(sim.score), {
+    stat(ctx, cx, g.h / 2 - 44, T('FINAL SCORE', '最终得分'), String(sim.score), {
       align: 'center', valueSize: Type.big, color: won ? Palette.accent : Palette.ink,
     });
   }
@@ -810,7 +817,7 @@ function drawOverlays(s, ctx, g, L) {
     const w = Math.min(g.w - 40, 460);
     const h = Math.min(g.h - 40, 172);
     const x = (g.w - w) / 2, y = (g.h - h) / 2;
-    panel(ctx, x, y, w, h, { title: 'seed', glowColor: Palette.accent, glowBlur: 24, radius: 6 });
+    panel(ctx, x, y, w, h, { title: T('seed', '种子'), glowColor: Palette.accent, glowBlur: 24, radius: 6 });
     const shown = s.seedBuf + (Math.floor(s.introT * 2.6) % 2 ? '_' : ' ');
     text(ctx, shown || '_', cx, y + h * 0.6, {
       size: Type.big, color: Palette.accent, align: 'center', baseline: 'alphabetic', weight: 700,
