@@ -176,14 +176,20 @@ export const CHARACTERS = [
 
 export function directorAt(tSec) {
   const m = tSec / 60;
-  const density = clamp01(m / 11);
+  // The run is 10 minutes and ends at the boss. Density previously ramped on an
+  // 11-minute scale (m/11), so it never reached 1.0 before the fight — the back half
+  // of every run stayed under-pressure. Full density now lands at 9:30, leaving a
+  // deliberate 30s crunch before the boss.
+  const density = clamp01(m / 9.5);
   const weights = { chaser: 1, swarmer: 0 };
   if (m >= 1.5) weights.swarmer = 0.8;
   if (m >= 3) weights.charger = 0.5;
   if (m >= 4) weights.splitter = 0.4;
   if (m >= 5.5) weights.shielded = 0.35;
   if (m >= 6.5) weights.ranged = 0.35;
-  const eliteChance = m >= 3 ? clamp01((m - 3) / 12) * 0.02 : 0;
+  // Elite chance capped out at 2% on a 12-minute ramp that never completed either —
+  // elites were nearly nonexistent in a real run. Reaches 8% by 9:00 instead.
+  const eliteChance = m >= 2.5 ? clamp01((m - 2.5) / 6.5) * 0.08 : 0;
   return { density, weights, eliteChance };
 }
 

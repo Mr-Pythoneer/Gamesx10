@@ -44,7 +44,11 @@ export const HOLE_COUNT = HOLES.length;
 
 /** Preview length by hole: full flight early, half by the middle, a stub on the back six. */
 export function previewSteps(holeIndex) {
-  if (holeIndex < 6) return 640;   // holes 1-6: the whole flight, all the way down
+  // Was 640 on holes 1-6 — the entire flight to rest, which showed the outcome
+  // before the player committed and defeated the "so close" risk/reward the whole
+  // game is built on. This only shortens the rendered preview; solve()/replay() run
+  // their own full simulation independently, so no solved hole can become unsolvable.
+  if (holeIndex < 6) return 200;   // holes 1-6: a few seconds, enough to learn the pull
   if (holeIndex < 12) return 120;  // holes 7-12: about two seconds of future
   return 46;                       // holes 13-18: a stub. Now you are flying it.
 }
