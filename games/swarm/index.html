@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swarm — Gamesx10</title>
+<meta name="description" content="A 10-minute bullet-heaven roguelite. You only move — every weapon fires itself.">
+<link rel="stylesheet" href="../../shared/arcade.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='rgb(11,12,15)'/><circle cx='16' cy='16' r='5' fill='rgb(94,242,192)'/><circle cx='16' cy='6' r='2.4' fill='rgb(160,107,255)'/><circle cx='25' cy='20' r='2.4' fill='rgb(160,107,255)'/><circle cx='7' cy='20' r='2.4' fill='rgb(160,107,255)'/></svg>">
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <a class="back" href="../../index.html">&larr; arcade</a>
+    <h1>Swarm</h1>
+    <span class="tag">you only move</span>
+    <span class="spacer"></span>
+    <span class="keys"><b>WASD</b>/<b>&larr;&rarr;&uarr;&darr;</b> move <b>1</b><b>2</b><b>3</b> draft</span>
+  </div>
+  <div class="stage">
+    <canvas id="game"></canvas>
+  </div>
+</div>
+
+<div class="file-warning" id="fileWarn">
+  <div class="card">
+    <h2>Serve me over http</h2>
+    <p>This game uses ES modules, which browsers refuse to load from <code>file://</code>.</p>
+    <p>Run <kbd>python3 -m http.server</kbd> in the repo root and open
+      <kbd>http://localhost:8000/games/swarm/</kbd> — or just play it on GitHub&nbsp;Pages.</p>
+  </div>
+</div>
+
+<script>
+  if (location.protocol === 'file:') document.getElementById('fileWarn').style.display = 'flex';
+</script>
+<script type="module" src="./game.js"></script>
+</body>
+</html>

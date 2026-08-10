@@ -849,36 +849,74 @@ registerSelftest('scribble', (check, log) => {
   check('a 2000-point scribble is simplified down to a sane particle count',
     bigScribble.ok && bigScribble.pts.length <= 72, `pts=${bigScribble.pts.length}`);
 
-  // ---- LIVE game: real injected pointer input through the kit
+  // ---- LIVE game: real injected pointer input through the kit, drawing the SAME
+  // stroke that replaySolution() already proved wins level 0 (levels.js LEVELS[0]
+  // .solution — a single static ramp from (30,240) to (600,470)). Using verified
+  // geometry here means this check proves the real Input->pointer->stroke pipeline
+  // matches the pure-sim path, rather than re-litigating whether some ad hoc line
+  // happens to be a working ramp.
+  //
+  // The page's own boot() call already started a live rAF/watchdog loop (the game
+  // may genuinely be running when a user opens the console and calls this). That
+  // loop calls game.step() on its own clock, concurrently with the manual
+  // game.step() calls below — harmless for a coarse "did it move" check, but this
+  // check's outcome depends on hundreds of frames of exact physics, where even one
+  // extra or missing frame compounds into a different result. Pause the loop for
+  // the deterministic portion and restore whatever state it was in afterward.
+  // game.restart() re-reads Store('maxLevel') rather than resetting to level 0, and
+  // committing/winning below writes real progress back to that same Store key — so
+  // without isolating it, this check plays differently after its own first pass
+  // (starts on whatever level it last advanced the player to) and quietly overwrites
+  // real saved progress. Snapshot every key it can touch and restore them after.
+  const wasPaused = game.paused;
+  const savedMaxLevel = Store.get('maxLevel', 0);
+  const savedBest0 = Store.get('best:0', null);
+  game.paused = true;
   game.restart();
+  loadLevel(game.state, 0);
   game.state.phase = 'play';
   game.state.tool = 'static';
+  const sol0 = LEVELS[0].solution;
+  const [rampStart, rampEnd] = sol0.strokes[0].points;
   const livePts = countParticles(game.state.sim);
-  const a = toScreen(game, 120, 300);
+  const STEPS = 14;
+  const a = toScreen(game, rampStart[0], rampStart[1]);
   game.input.pointDown(a.x, a.y);
   game.step(1);
-  for (let i = 1; i <= 10; i++) {
-    const q = toScreen(game, 120 + i * 48, 300 + i * 17);
+  for (let i = 1; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const q = toScreen(game, rampStart[0] + (rampEnd[0] - rampStart[0]) * t, rampStart[1] + (rampEnd[1] - rampStart[1]) * t);
     game.input.pointTo(q.x, q.y);
     game.step(1);
   }
-  const b = toScreen(game, 600, 470);
+  const b = toScreen(game, rampEnd[0], rampEnd[1]);
   game.input.pointUp(b.x, b.y);
   game.step(2);
   check('live game: an injected pointer drag creates a body',
     countParticles(game.state.sim) > livePts && game.state.sim.bodies.length === 1,
     `particles ${livePts}->${countParticles(game.state.sim)} ink=${game.state.sim.inkUsed.toFixed(0)}`);
 
+  // Let the drawn ramp settle under gravity before releasing the ball onto it —
+  // replaySolution() does the same (solution.settle), and dropping the ball onto
+  // still-relaxing geometry is a different, harder physics problem than the one
+  // the verified solution actually solves.
+  const settle = sol0.settle ?? 30;
+  for (let i = 0; i < settle; i++) game.step(1);
+
   game.input.tap('space');
   game.step(1);
   check('live game: SPACE releases the ball', game.state.sim.released === true);
-  for (let i = 0; i < 320 && game.state.sim.status === 'play'; i++) game.step(1);
+  const maxFrames = (sol0.maxFrames || 900) + 60;
+  for (let i = 0; i < maxFrames && game.state.sim.status === 'play'; i++) game.step(1);
   check('live game: the drawn ramp delivers the ball to the goal',
     game.state.sim.status === 'won', `status=${game.state.sim.status} frames=${game.state.sim.runFrames}`);
   check('live game: state stays finite after the run', allFinite(game.state.sim).ok);
 
   game.input.clear();
+  Store.set('maxLevel', savedMaxLevel);
+  Store.set('best:0', savedBest0);
   game.restart();
+  game.paused = wasPaused;
   log(`levels=${LEVELS.length} verified=${solved} solutionInk=[${inks}]`);
 });
 

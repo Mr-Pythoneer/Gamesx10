@@ -176,7 +176,7 @@ export const CHARACTERS = [
 
 export function directorAt(tSec) {
   const m = tSec / 60;
-  const density = clamp01(m / 8);
+  const density = clamp01(m / 11);
   const weights = { chaser: 1, swarmer: 0 };
   if (m >= 1.5) weights.swarmer = 0.8;
   if (m >= 3) weights.charger = 0.5;
