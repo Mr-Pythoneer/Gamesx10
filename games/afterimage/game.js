@@ -11,9 +11,75 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle,
+  T, mountLangToggle, registerTranslations,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
+
+registerTranslations({
+  'LEVEL': { es: 'NIVEL', fr: 'NIVEAU', ja: 'レベル', ko: '레벨' },
+  'GHOSTS': { es: 'FANTASMAS', fr: 'FANTÔMES', ja: '幻影', ko: '환영' },
+  'RUN': { es: 'INTENTOS', fr: 'ESSAIS', ja: '試行', ko: '시도' },
+  'BEST': { es: 'MEJOR', fr: 'MEILLEUR', ja: 'ベスト', ko: '최고' },
+  'GHOST PAR': { es: 'PAR FANTASMA', fr: 'PAR FANTÔME', ja: '幻影パー', ko: '환영 파' },
+  'HINT': { es: 'PISTA', fr: 'INDICE', ja: 'ヒント', ko: '힌트' },
+  '← →  MOVE     SPACE  JUMP     R  RETRY': {
+    es: '← →  MOVER     ESPACIO  SALTAR     R  REINTENTAR',
+    fr: '← →  DÉPLACER     ESPACE  SAUTER     R  RÉESSAYER',
+    ja: '← →  移動     SPACE  ジャンプ     R  リトライ',
+    ko: '← →  이동     SPACE  점프     R  재시도',
+  },
+  'NEW BEST': { es: 'NUEVO RÉCORD', fr: 'NOUVEAU RECORD', ja: '自己ベスト更新', ko: '신기록' },
+  'AFTERIMAGE': { es: 'REMANENCIA', fr: 'RÉMANENCE', ja: '残像', ko: '잔상' },
+  'Death or retry records your run as a ghost.': {
+    es: 'Morir o reintentar convierte tu partida en un fantasma.',
+    fr: 'Mourir ou recommencer enregistre ta partie sous forme de fantôme.',
+    ja: '死ぬかリトライすると、そのプレイが幻影として記録される。',
+    ko: '죽거나 다시 시도하면 그 플레이가 환영으로 기록된다.',
+  },
+  'Park a ghost on a plate to hold a door open.': {
+    es: 'Deja un fantasma sobre una placa para mantener una puerta abierta.',
+    fr: 'Place un fantôme sur une plaque pour maintenir une porte ouverte.',
+    ja: '幻影を踏板の上に残せば、扉は開いたままになる。',
+    ko: '압력판 위에 환영을 남겨두면 문이 계속 열려 있는다.',
+  },
+  "Climb a ghost's head to reach higher ledges.": {
+    es: 'Sube a la cabeza de un fantasma para alcanzar salientes más altos.',
+    fr: "Grimpe sur la tête d'un fantôme pour atteindre des rebords plus hauts.",
+    ja: '幻影の頭に乗って、高い足場まで登ろう。',
+    ko: '환영의 머리를 밟고 더 높은 발판에 올라가자.',
+  },
+  'PRESS SPACE': { es: 'PULSA ESPACIO', fr: 'APPUYEZ SUR ESPACE', ja: 'スペースキーを押して', ko: '스페이스바를 누르세요' },
+  'ALL CLEAR': { es: 'TODO SUPERADO', fr: 'TOUT TERMINÉ', ja: '全クリア', ko: '올 클리어' },
+  'ENTER TO RUN IT BACK': { es: 'ENTER PARA REPETIRLO', fr: 'ENTRÉE POUR REJOUER', ja: 'Enterでもう一度', ko: '엔터로 다시 플레이' },
+  'First Echo': { es: 'Primer Eco', fr: 'Premier Écho', ja: '最初の残響', ko: '첫 번째 메아리' },
+  'Stand on the plate, then retry — your ghost will hold it for you.': {
+    es: 'Párate sobre la placa y luego reintenta: tu fantasma la sostendrá por ti.',
+    fr: 'Reste sur la plaque, puis recommence : ton fantôme la maintiendra pour toi.',
+    ja: '踏板の上に立ってからリトライしよう。幻影が代わりに踏み続けてくれる。',
+    ko: '압력판 위에 서 있다가 다시 시도해봐. 환영이 대신 밟아줄 거야.',
+  },
+  'Stepping Stone': { es: 'Peldaño', fr: 'Marchepied', ja: '踏み台', ko: '디딤돌' },
+  'A ghost standing still is still standing. Climb it.': {
+    es: 'Un fantasma quieto sigue de pie. Súbete a él.',
+    fr: 'Un fantôme immobile reste debout. Grimpe dessus.',
+    ja: '静止した幻影も、そこに立ち続けている。その上に登ろう。',
+    ko: '가만히 있는 환영도 여전히 서 있다. 그 위에 올라타자.',
+  },
+  'Two Hands': { es: 'Dos Manos', fr: 'Deux Mains', ja: '二つの手', ko: '두 손' },
+  'Hop onto a ledge plate, then retry. Two ghosts, two doors.': {
+    es: 'Salta a una placa elevada y luego reintenta. Dos fantasmas, dos puertas.',
+    fr: 'Saute sur une plaque en hauteur, puis recommence. Deux fantômes, deux portes.',
+    ja: '高台の踏板に飛び乗ってからリトライしよう。幻影が二体、扉が二つ。',
+    ko: '높은 곳의 압력판으로 뛰어올랐다가 다시 시도해봐. 환영 둘, 문 둘.',
+  },
+  'Three of a Kind': { es: 'Trío', fr: 'Trio', ja: '三重奏', ko: '삼중주' },
+  'Two ledges to hold the doors, one more to boost you over the last wall.': {
+    es: 'Dos salientes para sostener las puertas, y uno más para impulsarte sobre el último muro.',
+    fr: 'Deux rebords pour maintenir les portes, et un dernier pour te faire franchir le mur final.',
+    ja: '扉を支える足場が二つ、そして最後の壁を越えるための踏み台がもう一つ。',
+    ko: '문을 지탱할 발판이 두 개, 그리고 마지막 벽을 넘게 해줄 발판이 하나 더.',
+  },
+});
 import {
   makeSim, stepSim, retryRun, replaySolution,
   TILE, PW, PH, M_LEFT, M_RIGHT, M_JUMP, GHOST_CAP,

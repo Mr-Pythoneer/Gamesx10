@@ -16,7 +16,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard,
-  T, mountLangToggle,
+  T, mountLangToggle, registerTranslations,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 import {
@@ -25,6 +25,82 @@ import {
   INK_R, BALL_R, WALL_R, SPIKE_R, PIN_COST, MAX_PARTICLES,
   TOOL_INK, TOOL_STATIC, TOOL_PIN, TOOL_ERASE, TOOLS,
 } from './physics.js';
+
+registerTranslations({
+  'ink': { es: 'tinta', fr: 'encre', ja: 'インク', ko: '잉크' },
+  'par': { es: 'par', fr: 'par', ja: 'パー', ko: '파' },
+  'best': { es: 'mejor', fr: 'meilleur', ja: 'ベスト', ko: '최고 기록' },
+
+  'BALL LOST — RESETTING': { es: 'BOLA PERDIDA — REINICIANDO', fr: 'BALLE PERDUE — RÉINITIALISATION', ja: 'ボールロスト — リセット中', ko: '공 소실 — 재설정 중' },
+  'ALL FIFTY SOLVED — RUN IT BACK': { es: 'LAS CINCUENTA RESUELTAS — OTRA VUELTA', fr: 'LES CINQUANTE RÉSOLUS — ON RECOMMENCE', ja: '全50関クリア — もう一周', ko: '50개 전부 클리어 — 다시 한 번' },
+  'SPACE  →  DROP THE BALL': { es: 'ESPACIO  →  SOLTAR LA BOLA', fr: 'ESPACE  →  LÂCHER LA BALLE', ja: 'SPACE  →  ボールを落とす', ko: 'SPACE  →  공 떨어뜨리기' },
+  'OUT OF INK — Z UNDO / 4 ERASE': { es: 'SIN TINTA — Z DESHACER / 4 BORRAR', fr: "PLUS D'ENCRE — Z ANNULER / 4 EFFACER", ja: 'インク切れ — Z元に戻す / 4消去', ko: '잉크 부족 — Z 실행취소 / 4 지우기' },
+  'THAT STROKE DID NOT TAKE': { es: 'ESE TRAZO NO SE FIJÓ', fr: "CE TRAIT N'A PAS PRIS", ja: 'その線は定着しなかった', ko: '그 선은 적용되지 않았습니다' },
+
+  'INK': { es: 'TINTA', fr: 'ENCRE', ja: 'インク', ko: '잉크' },
+  'STATIC': { es: 'FIJA', fr: 'FIXE', ja: '固定', ko: '고정' },
+  'PIN': { es: 'CLAVIJA', fr: 'ÉPINGLE', ja: 'ピン', ko: '핀' },
+  'ERASE': { es: 'BORRAR', fr: 'EFFACER', ja: '消去', ko: '지우기' },
+
+  'falls': { es: 'cae', fr: 'tombe', ja: '落下する', ko: '떨어짐' },
+  'pinned to world': { es: 'fijada al mundo', fr: 'fixée au monde', ja: '世界に固定', ko: '세계에 고정됨' },
+  'nail a point': { es: 'clava un punto', fr: 'cloue un point', ja: '一点を固定', ko: '한 점을 고정' },
+  'remove + refund': { es: 'quitar + reembolsar', fr: 'retirer + rembourser', ja: '削除して返却', ko: '제거 후 환불' },
+
+  'SKETCHBOOK FULL': { es: 'CUADERNO LLENO', fr: 'CARNET PLEIN', ja: 'スケッチブック満杯', ko: '스케치북 가득 참' },
+  'SOLVED': { es: 'RESUELTO', fr: 'RÉSOLU', ja: 'クリア', ko: '해결됨' },
+  'SPACE  →  START OVER': { es: 'ESPACIO  →  EMPEZAR DE NUEVO', fr: 'ESPACE  →  RECOMMENCER', ja: 'SPACE  →  最初から', ko: 'SPACE  →  처음부터' },
+  'SPACE  →  NEXT LEVEL': { es: 'ESPACIO  →  SIGUIENTE NIVEL', fr: 'ESPACE  →  NIVEAU SUIVANT', ja: 'SPACE  →  次のレベル', ko: 'SPACE  →  다음 레벨' },
+  'NEW PERSONAL BEST': { es: 'NUEVO RÉCORD PERSONAL', fr: 'NOUVEAU RECORD PERSONNEL', ja: '自己ベスト更新', ko: '개인 최고 기록 경신' },
+  'UNDER PAR': { es: 'BAJO PAR', fr: 'SOUS LE PAR', ja: 'パー以下', ko: '파 이하' },
+
+  'SCRIBBLE': { es: 'GARABATO', fr: 'GRIBOUILLIS', ja: 'スクリブル', ko: '스크리블' },
+  'Draw anything. It becomes real physics.': { es: 'Dibuja lo que sea. Se convierte en física real.', fr: "Dessinez n'importe quoi. Ça devient de la vraie physique.", ja: '何でも描こう。それは本物の物理演算になる。', ko: '무엇이든 그리세요. 실제 물리 법칙이 됩니다.' },
+  'Ramps, bridges, see-saws, catapults — get the ball home.': { es: 'Rampas, puentes, balancines, catapultas — lleva la bola a casa.', fr: 'Rampes, ponts, bascules, catapultes — ramenez la balle à la maison.', ja: '坂道、橋、シーソー、投石機——ボールをゴールへ。', ko: '경사로, 다리, 시소, 투석기 — 공을 목표지점으로.' },
+  'DRAG  ·  draw a stroke': { es: 'ARRASTRA  ·  dibuja un trazo', fr: 'GLISSER  ·  tracez un trait', ja: 'ドラッグ  ·  一筆描く', ko: '드래그  ·  선 그리기' },
+  '1 / 2  ·  falling ink  ·  world-pinned ink': { es: '1 / 2  ·  tinta que cae  ·  tinta fija al mundo', fr: '1 / 2  ·  encre qui tombe  ·  encre fixée au monde', ja: '1 / 2  ·  落下するインク  ·  世界に固定されたインク', ko: '1 / 2  ·  떨어지는 잉크  ·  세계에 고정된 잉크' },
+  '3 / 4  ·  pin a point  ·  erase + refund': { es: '3 / 4  ·  clava un punto  ·  borrar + reembolsar', fr: '3 / 4  ·  cloue un point  ·  effacer + rembourser', ja: '3 / 4  ·  一点を固定  ·  消去して返却', ko: '3 / 4  ·  한 점 고정  ·  지우기 + 환불' },
+  'SPACE  ·  drop the ball': { es: 'ESPACIO  ·  suelta la bola', fr: 'ESPACE  ·  lâchez la balle', ja: 'SPACE  ·  ボールを落とす', ko: 'SPACE  ·  공 떨어뜨리기' },
+  'R / Z / C  ·  reset  ·  undo  ·  clear': { es: 'R / Z / C  ·  reiniciar  ·  deshacer  ·  borrar todo', fr: 'R / Z / C  ·  réinitialiser  ·  annuler  ·  tout effacer', ja: 'R / Z / C  ·  リセット  ·  元に戻す  ·  全消去', ko: 'R / Z / C  ·  초기화  ·  실행취소  ·  전체 지우기' },
+  '[ / ]  ·  previous / next level': { es: '[ / ]  ·  nivel anterior / siguiente', fr: '[ / ]  ·  niveau précédent / suivant', ja: '[ / ]  ·  前 / 次のレベル', ko: '[ / ]  ·  이전 / 다음 레벨' },
+  'DRAW SOMETHING': { es: 'DIBUJA ALGO', fr: 'DESSINEZ QUELQUE CHOSE', ja: '何か描こう', ko: '무언가 그리세요' },
+
+  'First Line': { es: 'Primera línea', fr: 'Premier trait', ja: '最初の線', ko: '첫 번째 선' },
+  'Drag to draw. What you draw is real. Get the ball into the well.': { es: 'Arrastra para dibujar. Lo que dibujas es real. Mete la bola en el pozo.', fr: 'Glissez pour dessiner. Ce que vous dessinez est réel. Faites tomber la balle dans le puits.', ja: 'ドラッグして描こう。描いたものは現実になる。ボールを井戸に入れよう。', ko: '드래그해서 그리세요. 그린 것은 실제가 됩니다. 공을 우물에 넣으세요.' },
+
+  'Long Drop': { es: 'Caída larga', fr: 'Longue chute', ja: '長い落下', ko: '긴 낙하' },
+  'Nothing catches the ball but your own handwriting.': { es: 'Nada detiene la bola salvo tu propia escritura.', fr: 'Rien ne rattrape la balle à part votre propre écriture.', ja: 'ボールを受け止めるのは自分の描いた線だけだ。', ko: '오직 당신이 그린 선만이 공을 받아줍니다.' },
+
+  'Chasm': { es: 'Abismo', fr: 'Gouffre', ja: '裂け目', ko: '협곡' },
+  'Ink 1 falls. Ink 2 is nailed to the world. Long spans want tool 2.': { es: 'La tinta 1 cae. La tinta 2 está clavada al mundo. Los tramos largos necesitan la herramienta 2.', fr: "L'encre 1 tombe. L'encre 2 est clouée au monde. Les longues portées veulent l'outil 2.", ja: 'インク1は落下する。インク2は世界に固定されている。長い橋には道具2を使おう。', ko: '잉크 1은 떨어집니다. 잉크 2는 세계에 고정됩니다. 긴 구간에는 도구 2가 필요합니다.' },
+
+  'Underpass': { es: 'Paso subterráneo', fr: 'Passage souterrain', ja: '地下通路', ko: '지하도' },
+  'The slab is in the way. Get low early, then let gravity do the walking.': { es: 'La losa estorba. Baja pronto y deja que la gravedad haga el resto.', fr: 'La dalle bloque le passage. Descendez tôt, puis laissez la gravité faire le reste.', ja: '石板が邪魔をする。早めに低く構え、あとは重力に任せよう。', ko: '판이 길을 막고 있습니다. 일찍 낮게 내려간 뒤 중력에 맡기세요.' },
+
+  'Seesaw': { es: 'Balancín', fr: 'Bascule', ja: 'シーソー', ko: '시소' },
+  'That post is a fulcrum. A short plank plus one PIN beats a giant ramp.': { es: 'Ese poste es un fulcro. Una tabla corta más una CLAVIJA vence a una rampa enorme.', fr: 'Ce poteau est un pivot. Une courte planche plus une ÉPINGLE bat une rampe géante.', ja: 'あの支柱が支点だ。短い板とピン1本が巨大な坂道に勝る。', ko: '저 기둥이 지렛목입니다. 짧은 판자 하나와 핀 하나가 거대한 경사로보다 낫습니다.' },
+
+  'Window': { es: 'Ventana', fr: 'Fenêtre', ja: '窓', ko: '창문' },
+  'One gap in the wall. Aim the ball through it.': { es: 'Un solo hueco en el muro. Apunta la bola a través de él.', fr: 'Une seule ouverture dans le mur. Visez la balle à travers.', ja: '壁に一つだけ隙間がある。そこを狙ってボールを通そう。', ko: '벽에 틈이 하나뿐입니다. 그 틈으로 공을 조준하세요.' },
+
+  'Spike Span': { es: 'Puente de púas', fr: 'Pont à pointes', ja: '棘の橋', ko: '가시 다리' },
+  'Dynamic ink sags into the spikes. Static ink does not.': { es: 'La tinta dinámica se hunde en las púas. La tinta fija no.', fr: "L'encre dynamique s'affaisse dans les pointes. L'encre fixe non.", ja: '動くインクは棘の中に垂れ下がる。固定インクはそうならない。', ko: '동적 잉크는 가시 속으로 처집니다. 고정 잉크는 그렇지 않습니다.' },
+
+  'Slot Machine': { es: 'Máquina tragaperras', fr: 'Machine à sous', ja: 'スロットマシン', ko: '슬롯 머신' },
+  'Drop short and you land on spikes. Sail long and you land on spikes.': { es: 'Si caes corto, aterrizas en las púas. Si vuelas lejos, también.', fr: 'Trop court, vous atterrissez sur les pointes. Trop long, pareil.', ja: '短く落ちても棘に着地する。長く飛んでも棘に着地する。', ko: '짧게 떨어져도 가시에 착지, 멀리 날아도 가시에 착지합니다.' },
+
+  'Stepping Stones': { es: 'Piedras de paso', fr: 'Pierres de gué', ja: '飛び石', ko: '징검다리' },
+  'Two gaps, one budget. Spend it where the ball actually needs it.': { es: 'Dos huecos, un solo presupuesto. Gástalo donde la bola realmente lo necesita.', fr: 'Deux trous, un seul budget. Dépensez-le là où la balle en a vraiment besoin.', ja: '隙間は二つ、予算は一つ。ボールが本当に必要とする場所に使おう。', ko: '틈은 두 개, 예산은 하나. 공에 정말 필요한 곳에 쓰세요.' },
+
+  'Descent': { es: 'Descenso', fr: 'Descente', ja: '降下', ko: '하강' },
+  'Shelves all the way down. Short hops cost less than long ones.': { es: 'Repisas todo el camino hacia abajo. Los saltos cortos cuestan menos que los largos.', fr: "Des paliers jusqu'en bas. Les petits sauts coûtent moins cher que les grands.", ja: '棚がずっと下まで続く。短い跳躍は長い跳躍より安く済む。', ko: '선반이 끝까지 이어집니다. 짧은 도약이 긴 도약보다 저렴합니다.' },
+
+  'Needle': { es: 'Aguja', fr: 'Aiguille', ja: '針', ko: '바늘' },
+  'Almost no ink. One flick of the wrist is the whole level.': { es: 'Casi sin tinta. Un solo movimiento de muñeca es todo el nivel.', fr: 'Presque pas d\'encre. Un simple geste du poignet suffit pour tout le niveau.', ja: 'インクはほぼない。手首を一振りすればそれで全レベルだ。', ko: '잉크가 거의 없습니다. 손목 한 번 튕기면 레벨 전체가 끝납니다.' },
+
+  'Handwriting': { es: 'Caligrafía', fr: 'Écriture', ja: '手書き', ko: '필체' },
+  'Everything you learned, and barely enough ink to say it.': { es: 'Todo lo que has aprendido, con apenas tinta suficiente para expresarlo.', fr: 'Tout ce que vous avez appris, avec à peine assez d\'encre pour l\'exprimer.', ja: 'これまで学んだすべてを、ぎりぎりのインクで表現しよう。', ko: '지금까지 배운 모든 것을, 겨우 충분한 잉크로 표현하세요.' },
+});
 
 // ---------------------------------------------------------------- layout
 

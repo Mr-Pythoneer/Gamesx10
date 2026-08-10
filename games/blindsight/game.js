@@ -9,7 +9,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, lerp, text, allFinite, TAU, randomSeedString,
   Type, hudStrip, stat, meter, orb, vignette, titleCard,
-  T, mountLangToggle,
+  T, mountLangToggle, registerTranslations,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, teleport,
@@ -19,6 +19,118 @@ import {
   FACE_N, FACE_E, FACE_S, FACE_W,
 } from './sim.js';
 import { STAGES } from './stages.js';
+
+registerTranslations({
+  'shards': { es: 'fragmentos', fr: 'éclats', ja: '欠片', ko: '조각' },
+  'time': { es: 'tiempo', fr: 'temps', ja: '時間', ko: '시간' },
+  'stage': { es: 'etapa', fr: 'niveau', ja: 'ステージ', ko: '스테이지' },
+  'seed': { es: 'semilla', fr: 'graine', ja: 'シード', ko: '시드' },
+  'best': { es: 'mejor', fr: 'record', ja: 'ベスト', ko: '최고' },
+  'wide': { es: 'amplio', fr: 'large', ja: '広域', ko: '광역' },
+  'narrow': { es: 'estrecho', fr: 'étroit', ja: '狭域', ko: '협역' },
+  'SPACE ping  ·  F cone  ·  SHIFT sneak': {
+    es: 'ESPACIO pulso  ·  F cono  ·  SHIFT sigilo',
+    fr: 'ESPACE écho  ·  F cône  ·  SHIFT furtif',
+    ja: 'SPACE 発信  ·  F 円錐波  ·  SHIFT 忍び足',
+    ko: 'SPACE 핑  ·  F 원뿔파  ·  SHIFT 은신',
+  },
+  'SPACE loud ping  ·  F quiet cone  ·  SHIFT sneak': {
+    es: 'ESPACIO pulso fuerte  ·  F cono silencioso  ·  SHIFT sigilo',
+    fr: 'ESPACE écho fort  ·  F cône silencieux  ·  SHIFT furtif',
+    ja: 'SPACE 大音波  ·  F 静音円錐波  ·  SHIFT 忍び足',
+    ko: 'SPACE 큰 핑  ·  F 조용한 원뿔파  ·  SHIFT 은신',
+  },
+  'SPACE = loud ping (it hears you)   ·   F = quiet cone   ·   SHIFT = sneak': {
+    es: 'ESPACIO = pulso fuerte (te oye)   ·   F = cono silencioso   ·   SHIFT = sigilo',
+    fr: "ESPACE = écho fort (il t'entend)   ·   F = cône silencieux   ·   SHIFT = furtif",
+    ja: 'SPACE = 大音波(気づかれる)   ·   F = 静音円錐波   ·   SHIFT = 忍び足',
+    ko: 'SPACE = 큰 핑(들킨다)   ·   F = 조용한 원뿔파   ·   SHIFT = 은신',
+  },
+  'BLINDSIGHT': { es: 'VISIÓN CIEGA', fr: 'VISION AVEUGLE', ja: 'ブラインドサイト', ko: '블라인드사이트' },
+  'Ping to see — it hears every ping.': {
+    es: 'Emite un pulso para ver — oye cada pulso.',
+    fr: 'Émets un écho pour voir — il entend chaque écho.',
+    ja: '発信して見る――だが、それは全ての波音を聞いている。',
+    ko: '핑을 보내야 보인다 — 그것은 모든 핑을 듣는다.',
+  },
+  'You are blind. Every ping shows you the maze — and shows the maze where you are.': {
+    es: 'Estás ciego. Cada pulso te muestra el laberinto — y le muestra al laberinto dónde estás.',
+    fr: 'Tu es aveugle. Chaque écho te révèle le labyrinthe — et révèle au labyrinthe où tu es.',
+    ja: 'お前は盲目だ。発信するたびに迷宮が見える――そして迷宮にお前の居場所を教えてしまう。',
+    ko: '당신은 눈이 멀었다. 핑을 보낼 때마다 미로가 보인다 — 그리고 미로에게 당신의 위치도 드러난다.',
+  },
+  'WASD move  ·  SPACE loud ping  ·  F cone': {
+    es: 'WASD mover  ·  ESPACIO pulso fuerte  ·  F cono',
+    fr: 'WASD déplacer  ·  ESPACE écho fort  ·  F cône',
+    ja: 'WASD 移動  ·  SPACE 大音波  ·  F 円錐波',
+    ko: 'WASD 이동  ·  SPACE 큰 핑  ·  F 원뿔파',
+  },
+  'SHIFT sneak  ·  R retry  ·  N new seed': {
+    es: 'SHIFT sigilo  ·  R reintentar  ·  N nueva semilla',
+    fr: 'SHIFT furtif  ·  R réessayer  ·  N nouvelle graine',
+    ja: 'SHIFT 忍び足  ·  R リトライ  ·  N 新シード',
+    ko: 'SHIFT 은신  ·  R 재시도  ·  N 새 시드',
+  },
+  'WASD / arrows move   ·   SPACE loud ping   ·   F quiet cone   ·   SHIFT sneak': {
+    es: 'WASD / flechas mover   ·   ESPACIO pulso fuerte   ·   F cono silencioso   ·   SHIFT sigilo',
+    fr: 'WASD / flèches déplacer   ·   ESPACE écho fort   ·   F cône silencieux   ·   SHIFT furtif',
+    ja: 'WASD / 矢印 移動   ·   SPACE 大音波   ·   F 静音円錐波   ·   SHIFT 忍び足',
+    ko: 'WASD / 방향키 이동   ·   SPACE 큰 핑   ·   F 조용한 원뿔파   ·   SHIFT 은신',
+  },
+  'C  campaign — 50 fixed stages': {
+    es: 'C  campaña — 50 niveles fijos',
+    fr: 'C  campagne — 50 niveaux fixes',
+    ja: 'C  キャンペーン — 固定50ステージ',
+    ko: 'C  캠페인 — 고정 50스테이지',
+  },
+  'PRESS SPACE': { es: 'PULSA ESPACIO', fr: 'APPUIE SUR ESPACE', ja: 'SPACEを押す', ko: 'SPACE 누르기' },
+  'CAMPAIGN COMPLETE': { es: 'CAMPAÑA COMPLETADA', fr: 'CAMPAGNE TERMINÉE', ja: 'キャンペーン制覇', ko: '캠페인 완료' },
+  'ESCAPED': { es: 'ESCAPASTE', fr: 'ÉCHAPPÉ', ja: '脱出成功', ko: '탈출 성공' },
+  'CAUGHT': { es: 'ATRAPADO', fr: 'CAPTURÉ', ja: '捕獲された', ko: '붙잡힘' },
+  'SPACE / N  stage select      R  retry stage': {
+    es: 'SPACE / N  elegir nivel      R  reintentar nivel',
+    fr: 'SPACE / N  choisir niveau      R  rejouer niveau',
+    ja: 'SPACE / N  ステージ選択      R  リトライ',
+    ko: 'SPACE / N  스테이지 선택      R  재시도',
+  },
+  'SPACE / R  retry seed      N  new seed': {
+    es: 'SPACE / R  reintentar semilla      N  nueva semilla',
+    fr: 'SPACE / R  rejouer graine      N  nouvelle graine',
+    ja: 'SPACE / R  シード再挑戦      N  新シード',
+    ko: 'SPACE / R  시드 재시도      N  새 시드',
+  },
+  'BLINDSIGHT — CAMPAIGN': {
+    es: 'VISIÓN CIEGA — CAMPAÑA',
+    fr: 'VISION AVEUGLE — CAMPAGNE',
+    ja: 'ブラインドサイト — キャンペーン',
+    ko: '블라인드사이트 — 캠페인',
+  },
+  'LEFT/RIGHT pick   ·   SPACE start   ·   F free play': {
+    es: 'IZQ/DER elegir   ·   ESPACIO empezar   ·   F juego libre',
+    fr: 'GAUCHE/DROITE choisir   ·   ESPACE démarrer   ·   F jeu libre',
+    ja: '左右 選択   ·   SPACE 開始   ·   F フリープレイ',
+    ko: '좌우 선택   ·   SPACE 시작   ·   F 자유 모드',
+  },
+  'LEFT / RIGHT pick a stage   ·   SPACE start   ·   F free-play seeds instead': {
+    es: 'IZQUIERDA / DERECHA elegir nivel   ·   ESPACIO empezar   ·   F usar semillas de juego libre',
+    fr: 'GAUCHE / DROITE choisir un niveau   ·   ESPACE démarrer   ·   F utiliser des graines en jeu libre',
+    ja: '左 / 右 でステージ選択   ·   SPACE 開始   ·   F フリープレイのシードを使う',
+    ko: '좌 / 우 로 스테이지 선택   ·   SPACE 시작   ·   F 대신 자유 모드 시드 사용',
+  },
+  'LOCKED': { es: 'BLOQUEADO', fr: 'VERROUILLÉ', ja: 'ロック中', ko: '잠김' },
+  'Find 4 shards, then reach the exit.': {
+    es: 'Encuentra 4 fragmentos y llega a la salida.',
+    fr: 'Trouve 4 éclats, puis atteins la sortie.',
+    ja: '欠片を4個見つけて、出口へ向かえ。',
+    ko: '조각 4개를 찾아 출구로 가라.',
+  },
+  'Find 4 shards, then reach the exit. Something in here hunts by sound.': {
+    es: 'Encuentra 4 fragmentos y llega a la salida. Algo aquí caza por el sonido.',
+    fr: 'Trouve 4 éclats, puis atteins la sortie. Quelque chose ici chasse au son.',
+    ja: '欠片を4個見つけて、出口へ向かえ。ここには音で狩る何かがいる。',
+    ko: '조각 4개를 찾아 출구로 가라. 이곳의 무언가는 소리로 사냥한다.',
+  },
+});
 
 // ---------------------------------------------------------------- palette
 

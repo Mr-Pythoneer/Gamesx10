@@ -11,7 +11,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store, RNG,
   clamp, approach, text, allFinite, TAU,
   Type, HUD_H, withGlow, stat, hudStrip, panel, meter, orb, vignette, titleCard,
-  T, mountLangToggle, currentLang,
+  T, mountLangToggle, currentLang, registerTranslations,
 } from '../../shared/kit.js';
 
 import {
@@ -21,6 +21,40 @@ import {
 } from './sim.js';
 
 import { HOLES, TOTAL_PAR } from './holes.js';
+
+registerTranslations({
+  'HOLE RESET': { es: 'HOYO REINICIADO', fr: 'TROU RÉINITIALISÉ', ja: 'ホールをリセット', ko: '홀 리셋' },
+  'PULL FURTHER BACK': { es: 'TIRA MÁS HACIA ATRÁS', fr: 'TIRE PLUS EN ARRIÈRE', ja: 'もっと引いて', ko: '더 뒤로 당기세요' },
+  'SWALLOWED BY THE BLACK HOLE': { es: 'TRAGADO POR EL AGUJERO NEGRO', fr: 'AVALÉ PAR LE TROU NOIR', ja: 'ブラックホールに飲み込まれた', ko: '블랙홀에 삼켜짐' },
+  'SMACKED THE REPULSOR CORE': { es: 'CHOCÓ CONTRA EL NÚCLEO REPULSOR', fr: 'PERCUTÉ LE NOYAU RÉPULSEUR', ja: '反発コアに激突', ko: '반발 코어에 충돌' },
+  'CRASHED INTO A MOON': { es: 'ESTRELLADO CONTRA UNA LUNA', fr: 'ÉCRASÉ SUR UNE LUNE', ja: '衛星に衝突', ko: '위성과 충돌' },
+  'CRASHED INTO A PLANET': { es: 'ESTRELLADO CONTRA UN PLANETA', fr: 'ÉCRASÉ SUR UNE PLANÈTE', ja: '惑星に衝突', ko: '행성과 충돌' },
+  'LEFT THE SYSTEM': { es: 'SALIÓ DEL SISTEMA', fr: 'SORTI DU SYSTÈME', ja: '星系の外へ', ko: '행성계를 벗어남' },
+  'LOST IN SPACE': { es: 'PERDIDO EN EL ESPACIO', fr: "PERDU DANS L'ESPACE", ja: '宇宙で迷子', ko: '우주에서 실종' },
+  'HOLE': { es: 'HOYO', fr: 'TROU', ja: 'ホール', ko: '홀' },
+  'PAR': { es: 'PAR', fr: 'PAR', ja: 'パー', ko: '파' },
+  'BEST': { es: 'MEJOR', fr: 'MEILLEUR', ja: 'ベスト', ko: '최고' },
+  'STROKES': { es: 'GOLPES', fr: 'COUPS', ja: '打数', ko: '타수' },
+  'ROUND': { es: 'RONDA', fr: 'MANCHE', ja: 'ラウンド', ko: '라운드' },
+  'R RESET  ·  SPACE FAST-FORWARD': { es: 'R REINICIAR  ·  SPACE AVANCE RÁPIDO', fr: 'R RÉINITIALISER  ·  SPACE AVANCE RAPIDE', ja: 'R リセット ・ SPACE 早送り', ko: 'R 리셋  ·  SPACE 빨리감기' },
+  'DRAG BACK AND RELEASE TO LAUNCH': { es: 'ARRASTRA HACIA ATRÁS Y SUELTA PARA LANZAR', fr: 'TIRE EN ARRIÈRE ET RELÂCHE POUR LANCER', ja: '後ろにドラッグして離すと発射', ko: '뒤로 드래그한 뒤 놓으면 발사' },
+  'HOLD SPACE TO FAST-FORWARD': { es: 'MANTÉN SPACE PARA AVANZAR RÁPIDO', fr: 'MAINTIENS SPACE POUR AVANCER RAPIDEMENT', ja: 'SPACEを押し続けると早送り', ko: 'SPACE를 누르고 있으면 빨리감기' },
+  'Launch a probe. Real gravity does the rest.': { es: 'Lanza una sonda. La gravedad real hace el resto.', fr: 'Lance une sonde. La gravité réelle fait le reste.', ja: '探査機を発射しよう。あとは本物の重力に任せて。', ko: '탐사선을 발사하세요. 나머지는 실제 중력이 알아서 합니다.' },
+  'Slingshot round planets, dodge black holes,': { es: 'Usa planetas como resortera, esquiva agujeros negros,', fr: 'Utilise les planètes comme fronde, évite les trous noirs,', ja: '惑星でスイングバイし、ブラックホールをかわし、', ko: '행성을 이용해 스윙바이하고, 블랙홀을 피하며,' },
+  'dive through wormholes. Sink it under par.': { es: 'atraviesa agujeros de gusano. Termina bajo par.', fr: 'traverse des trous de ver. Termine sous le par.', ja: 'ワームホールを通り抜けよう。パー以下でホールイン。', ko: '웜홀을 통과하세요. 파 이하로 홀인하세요.' },
+  'Slingshot, dodge, warp. Sink it under par.': { es: 'Resortera, esquiva, salta. Termina bajo par.', fr: 'Fronde, esquive, saut. Termine sous le par.', ja: 'スイングバイ、回避、ワープ。パー以下でホールイン。', ko: '스윙바이, 회피, 워프. 파 이하로 홀인하세요.' },
+  'DRAG back from the probe, release to fire': { es: 'ARRASTRA hacia atrás desde la sonda, suelta para disparar', fr: 'TIRE en arrière depuis la sonde, relâche pour tirer', ja: '探査機からドラッグして、離すと発射', ko: '탐사선에서 뒤로 드래그한 뒤 놓으면 발사' },
+  'R reset hole  ·  SPACE fast-forward': { es: 'R reiniciar hoyo  ·  SPACE avance rápido', fr: 'R réinitialiser le trou  ·  SPACE avance rapide', ja: 'R ホールをリセット ・ SPACE 早送り', ko: 'R 홀 리셋  ·  SPACE 빨리감기' },
+  'ORBITAL': { es: 'ORBITAL', fr: 'ORBITAL', ja: 'オービタル', ko: '오비탈' },
+  'N-BODY GRAVITY GOLF': { es: 'GOLF GRAVITACIONAL DE N CUERPOS', fr: 'GOLF GRAVITATIONNEL À N CORPS', ja: 'N体重力ゴルフ', ko: 'N체 중력 골프' },
+  'DRAG TO LAUNCH': { es: 'ARRASTRA PARA LANZAR', fr: 'TIRE POUR LANCER', ja: 'ドラッグして発射', ko: '드래그해서 발사' },
+  'ENTER for the next hole': { es: 'ENTER para el siguiente hoyo', fr: 'ENTER pour le trou suivant', ja: 'ENTERで次のホールへ', ko: 'ENTER를 눌러 다음 홀로' },
+  'ROUND COMPLETE': { es: 'RONDA COMPLETA', fr: 'MANCHE TERMINÉE', ja: 'ラウンド終了', ko: '라운드 완료' },
+  'NEW BEST ROUND': { es: 'NUEVA MEJOR RONDA', fr: 'NOUVELLE MEILLEURE MANCHE', ja: '自己ベスト更新', ko: '신기록 라운드' },
+  'ENTER to play another round': { es: 'ENTER para jugar otra ronda', fr: 'ENTER pour rejouer une manche', ja: 'ENTERでもう一度プレイ', ko: 'ENTER를 눌러 다시 플레이' },
+  'SCORECARD': { es: 'TARJETA DE PUNTUACIÓN', fr: 'CARTE DE SCORE', ja: 'スコアカード', ko: '스코어카드' },
+  'HOLE / PAR / SCORE': { es: 'HOYO / PAR / PUNTUACIÓN', fr: 'TROU / PAR / SCORE', ja: 'ホール / パー / スコア', ko: '홀 / 파 / 점수' },
+});
 
 // ---------------------------------------------------------------- look-up tables
 

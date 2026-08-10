@@ -12,7 +12,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, approach, text, roundRect, allFinite, TAU, randomSeedString,
   Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
-  T, mountLangToggle,
+  T, mountLangToggle, registerTranslations,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, addTile, findWord, settle, tileById, totalKE, maxOverlap, outOfBounds,
@@ -20,6 +20,143 @@ import {
   WORLD_W, WORLD_H, TILE_R, DANGER_Y, MIN_WORD, CHAIN_WINDOW, MAX_TILES,
 } from './sim.js';
 import { isWord, WORD_COUNT } from './words.js';
+
+// es/fr/ja/ko for every English string passed as T()'s first argument.
+// STAGE_COUNT_FOR_I18N mirrors STAGE_COUNT below (50) — kept local so this
+// block can sit above the campaign generator without reordering module init.
+const STAGE_COUNT_FOR_I18N = 50;
+const stageI18n = {};
+for (let i = 0; i < STAGE_COUNT_FOR_I18N; i++) {
+  stageI18n['Stage ' + (i + 1)] = {
+    es: 'Etapa ' + (i + 1), fr: 'Étape ' + (i + 1), ja: 'ステージ ' + (i + 1), ko: '스테이지 ' + (i + 1),
+  };
+  stageI18n['STAGE ' + (i + 1) + '/' + STAGE_COUNT_FOR_I18N] = {
+    es: 'ETAPA ' + (i + 1) + '/' + STAGE_COUNT_FOR_I18N,
+    fr: 'ÉTAPE ' + (i + 1) + '/' + STAGE_COUNT_FOR_I18N,
+    ja: 'ステージ ' + (i + 1) + '/' + STAGE_COUNT_FOR_I18N,
+    ko: '스테이지 ' + (i + 1) + '/' + STAGE_COUNT_FOR_I18N,
+  };
+  if (i >= 1) {
+    stageI18n['Stage ' + (i + 1) + ' is now unlocked.'] = {
+      es: 'La etapa ' + (i + 1) + ' ya está desbloqueada.',
+      fr: 'L’étape ' + (i + 1) + ' est maintenant débloquée.',
+      ja: 'ステージ ' + (i + 1) + ' が解放されました。',
+      ko: '스테이지 ' + (i + 1) + '이(가) 잠금 해제되었습니다.',
+    };
+  }
+}
+
+registerTranslations({
+  ...stageI18n,
+  'CHAIN ×': { es: 'CADENA ×', fr: 'CHAÎNE ×', ja: 'チェイン ×', ko: '체인 ×' },
+  'OVERFLOWING': { es: 'DESBORDADO', fr: 'DÉBORDEMENT', ja: 'あふれています', ko: '넘침' },
+  'TOP LINE': { es: 'LÍNEA LÍMITE', fr: 'LIGNE LIMITE', ja: '警戒ライン', ko: '경고선' },
+  'score': { es: 'puntos', fr: 'score', ja: 'スコア', ko: '점수' },
+  'words': { es: 'palabras', fr: 'mots', ja: '単語数', ko: '단어' },
+  'target': { es: 'objetivo', fr: 'objectif', ja: '目標', ko: '목표' },
+  'best': { es: 'mejor', fr: 'record', ja: 'ベスト', ko: '최고' },
+  'chain': { es: 'cadena', fr: 'chaîne', ja: 'チェイン', ko: '체인' },
+  'status': { es: 'estado', fr: 'statut', ja: '状態', ko: '상태' },
+  'longest word': { es: 'palabra más larga', fr: 'mot le plus long', ja: '最長単語', ko: '최장 단어' },
+  'PILE HEIGHT': { es: 'ALTURA DE LA PILA', fr: 'HAUTEUR DE LA PILE', ja: '山の高さ', ko: '더미 높이' },
+  'TILES': { es: 'FICHAS', fr: 'TUILES', ja: 'タイル', ko: '타일' },
+  'VOWELS': { es: 'VOCALES', fr: 'VOYELLES', ja: '母音', ko: '모음' },
+  'CONSONANTS': { es: 'CONSONANTES', fr: 'CONSONNES', ja: '子音', ko: '자음' },
+  'DRAG THROUGH TOUCHING TILES': {
+    es: 'ARRASTRA POR FICHAS QUE SE TOQUEN', fr: 'GLISSE SUR DES TUILES QUI SE TOUCHENT',
+    ja: '隣り合うタイルをなぞる', ko: '맞닿은 타일을 따라 드래그',
+  },
+  'RELEASE TO SUBMIT': { es: 'SUELTA PARA ENVIAR', fr: 'RELÂCHE POUR VALIDER', ja: '離して確定', ko: '손을 떼면 제출' },
+  'R   RESTART': { es: 'R   REINICIAR', fr: 'R   RECOMMENCER', ja: 'R   リスタート', ko: 'R   재시작' },
+  'words found': { es: 'palabras encontradas', fr: 'mots trouvés', ja: '見つけた単語', ko: '찾은 단어' },
+  'CHAIN': { es: 'CADENA', fr: 'CHAÎNE', ja: 'チェイン', ko: '체인' },
+  'SPELL AGAIN': { es: 'DELETREA OTRA VEZ', fr: 'ÉPELLE ENCORE', ja: 'もう一度つづる', ko: '다시 철자 맞추기' },
+  'CLEAR A WORD TO OPEN A CHAIN': {
+    es: 'ELIMINA UNA PALABRA PARA ABRIR UNA CADENA', fr: 'ÉLIMINE UN MOT POUR OUVRIR UNE CHAÎNE',
+    ja: '単語を消してチェインを開始', ko: '단어를 없애 체인을 시작하세요',
+  },
+  'RELEASE': { es: 'SUELTA', fr: 'RELÂCHE', ja: 'リリース', ko: '릴리스' },
+  'NOT A WORD': { es: 'NO ES UNA PALABRA', fr: 'CE N’EST PAS UN MOT', ja: '単語ではありません', ko: '단어가 아닙니다' },
+  'THERE IS A WORD IN THERE': {
+    es: 'HAY UNA PALABRA AHÍ DENTRO', fr: 'IL Y A UN MOT LÀ-DEDANS', ja: 'この中に単語が隠れている', ko: '저 안에 단어가 있어요',
+  },
+  'DRAG THROUGH TOUCHING LETTERS': {
+    es: 'ARRASTRA POR LETRAS QUE SE TOQUEN', fr: 'GLISSE SUR DES LETTRES QUI SE TOUCHENT',
+    ja: '隣り合う文字をなぞる', ko: '맞닿은 글자를 따라 드래그',
+  },
+  'CAMPAIGN': { es: 'CAMPAÑA', fr: 'CAMPAGNE', ja: 'キャンペーン', ko: '캠페인' },
+  'CLICK A STAGE TO PLAY IT': {
+    es: 'HAZ CLIC EN UNA ETAPA PARA JUGARLA', fr: 'CLIQUE SUR UNE ÉTAPE POUR Y JOUER',
+    ja: 'ステージをクリックしてプレイ', ko: '스테이지를 클릭해서 플레이하세요',
+  },
+  'LEXICON': { es: 'LEXICON', fr: 'LEXICON', ja: 'レキシコン', ko: '렉시콘' },
+  'Letters rain. Words vaporize. The pile collapses.': {
+    es: 'Llueven letras. Las palabras se desvanecen. La pila se derrumba.',
+    fr: 'Les lettres pleuvent. Les mots se volatilisent. La pile s’effondre.',
+    ja: '文字が降り注ぐ。単語は消え去る。山は崩れ落ちる。',
+    ko: '글자가 비처럼 쏟아진다. 단어는 사라진다. 더미는 무너진다.',
+  },
+  'Drag through TOUCHING letters to spell a word.': {
+    es: 'Arrastra por letras que se TOQUEN para deletrear una palabra.',
+    fr: 'Glisse à travers des lettres qui SE TOUCHENT pour épeler un mot.',
+    ja: '隣り合う文字をなぞって単語をつづろう。',
+    ko: '맞닿은 글자를 지나며 드래그해서 단어를 만드세요.',
+  },
+  '3 letters minimum · release to submit · backtrack to undo': {
+    es: 'Mínimo 3 letras · suelta para enviar · retrocede para deshacer',
+    fr: '3 lettres minimum · relâche pour valider · reviens en arrière pour annuler',
+    ja: '最低3文字・離して確定・逆戻りで取り消し',
+    ko: '최소 3글자 · 손을 떼면 제출 · 되돌아가면 취소',
+  },
+  'Spell again before the rubble settles for a CHAIN multiplier.': {
+    es: 'Deletrea otra vez antes de que los escombros se asienten para un multiplicador de CADENA.',
+    fr: 'Épelle un autre mot avant que les débris ne se stabilisent pour un multiplicateur de CHAÎNE.',
+    ja: '瓦礫が落ち着く前にもう一度つづれば、チェイン倍率が付く。',
+    ko: '잔해가 가라앉기 전에 다시 철자를 맞추면 체인 배율을 얻습니다.',
+  },
+  'Let the pile rest above the top line and it is over.': {
+    es: 'Si la pila queda por encima de la línea límite, se acabó.',
+    fr: 'Si la pile reste au-dessus de la ligne limite, c’est terminé.',
+    ja: '山が警戒ラインより上で止まったら終了です。',
+    ko: '더미가 경고선 위에서 멈추면 게임 종료입니다.',
+  },
+  'Press C for the 50-stage Campaign.': {
+    es: 'Pulsa C para la Campaña de 50 etapas.',
+    fr: 'Appuie sur C pour la Campagne de 50 étapes.',
+    ja: 'Cキーで50ステージのキャンペーンへ。',
+    ko: 'C를 눌러 50스테이지 캠페인으로 이동하세요.',
+  },
+  'CLICK TO START': { es: 'CLIC PARA EMPEZAR', fr: 'CLIQUE POUR COMMENCER', ja: 'クリックしてスタート', ko: '클릭해서 시작' },
+  'OVERFLOW': { es: 'DESBORDE', fr: 'DÉBORDEMENT', ja: 'あふれた', ko: '넘침' },
+  'The pile overflowed before you reached the target.': {
+    es: 'La pila se desbordó antes de que alcanzaras el objetivo.',
+    fr: 'La pile a débordé avant que tu n’atteignes l’objectif.',
+    ja: '目標に届く前に山があふれてしまった。',
+    ko: '목표에 도달하기 전에 더미가 넘쳐버렸습니다.',
+  },
+  'CLICK OR PRESS R TO RETRY  ·  ESC FOR STAGE SELECT': {
+    es: 'CLIC O PULSA R PARA REINTENTAR  ·  ESC PARA ELEGIR ETAPA',
+    fr: 'CLIQUE OU APPUIE SUR R POUR RÉESSAYER  ·  ÉCHAP POUR CHOISIR UNE ÉTAPE',
+    ja: 'クリックまたはRキーでリトライ　・　ESCでステージ選択',
+    ko: '클릭하거나 R을 눌러 재시도  ·  ESC로 스테이지 선택',
+  },
+  'RETRY': { es: 'REINTENTAR', fr: 'RÉESSAYER', ja: 'リトライ', ko: '다시 시도' },
+  'STAGE CLEAR': { es: 'ETAPA SUPERADA', fr: 'ÉTAPE RÉUSSIE', ja: 'ステージクリア', ko: '스테이지 클리어' },
+  'That was the last stage — campaign complete!': {
+    es: 'Esa era la última etapa: ¡campaña completa!',
+    fr: 'C’était la dernière étape — campagne terminée !',
+    ja: 'それが最後のステージでした——キャンペーン完了!',
+    ko: '그것이 마지막 스테이지였습니다 — 캠페인 완료!',
+  },
+  'CLICK / SPACE FOR NEXT STAGE  ·  ESC FOR STAGE SELECT': {
+    es: 'CLIC / ESPACIO PARA LA SIGUIENTE ETAPA  ·  ESC PARA ELEGIR ETAPA',
+    fr: 'CLIQUE / ESPACE POUR L’ÉTAPE SUIVANTE  ·  ÉCHAP POUR CHOISIR UNE ÉTAPE',
+    ja: 'クリック／スペースで次のステージへ　・　ESCでステージ選択',
+    ko: '클릭 / 스페이스로 다음 스테이지  ·  ESC로 스테이지 선택',
+  },
+  'NEXT STAGE': { es: 'SIGUIENTE ETAPA', fr: 'ÉTAPE SUIVANTE', ja: '次のステージ', ko: '다음 스테이지' },
+  'STAGE SELECT': { es: 'ELEGIR ETAPA', fr: 'CHOIX DE L’ÉTAPE', ja: 'ステージ選択', ko: '스테이지 선택' },
+});
 
 const VOWELS = 'aeiou';
 const RARE = 'jqxz';

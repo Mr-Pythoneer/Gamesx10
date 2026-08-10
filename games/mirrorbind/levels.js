@@ -15,8 +15,16 @@ export const LEVELS = [
   {
     name: 'Bound',
     nameZh: '归位',
+    nameEs: 'Atado',
+    nameFr: 'Lié',
+    nameJa: '束縛',
+    nameKo: '결속',
     hint: 'One set of keys. Two of you. Get both to the exit.',
     hintZh: '一组按键,两个你。让两个都到达出口。',
+    hintEs: 'Un solo juego de teclas. Dos de ti. Lleva a ambos a la salida.',
+    hintFr: 'Un seul jeu de touches. Deux de toi. Amène les deux à la sortie.',
+    hintJa: '一組のキー。二人のあなた。両方を出口へ。',
+    hintKo: '하나의 키 조합. 두 명의 당신. 둘 다 출구로.',
     worlds: [
       {
         flipX: false,
@@ -48,8 +56,16 @@ export const LEVELS = [
   {
     name: 'Gap',
     nameZh: '缺口',
+    nameEs: 'Hueco',
+    nameFr: 'Trou',
+    nameJa: '隙間',
+    nameKo: '틈',
     hint: 'Jump is the one thing you both agree on.',
     hintZh: '跳跃是你们唯一达成一致的事。',
+    hintEs: 'Saltar es lo único en lo que ambos están de acuerdo.',
+    hintFr: "Sauter est la seule chose sur laquelle vous êtes tous deux d'accord.",
+    hintJa: 'ジャンプだけは、二人の意見が一致する。',
+    hintKo: '점프만큼은 둘 다 의견이 일치한다.',
     worlds: [
       {
         flipX: false,
@@ -81,8 +97,16 @@ export const LEVELS = [
   {
     name: 'Offset',
     nameZh: '错位',
+    nameEs: 'Desfase',
+    nameFr: 'Décalage',
+    nameJa: 'ズレ',
+    nameKo: '어긋남',
     hint: 'The holes no longer line up. Find the window that clears both.',
     hintZh: '两边的坑不再对齐。找到能同时越过两边的时机。',
+    hintEs: 'Los huecos ya no están alineados. Encuentra el momento que libra a ambos.',
+    hintFr: "Les trous ne s'alignent plus. Trouve la fenêtre qui dégage les deux.",
+    hintJa: '穴がもう揃っていない。両方を越えられる瞬間を見つけろ。',
+    hintKo: '구멍이 더 이상 맞지 않는다. 둘 다 통과할 수 있는 타이밍을 찾아라.',
     worlds: [
       {
         flipX: false,
@@ -114,8 +138,16 @@ export const LEVELS = [
   {
     name: 'Spike',
     nameZh: '尖刺',
+    nameEs: 'Púa',
+    nameFr: 'Pointe',
+    nameJa: 'トゲ',
+    nameKo: '가시',
     hint: 'Spikes kill instantly. Both of you die when either of you does.',
     hintZh: '尖刺瞬间致命。只要有一个你死了,两个都算死。',
+    hintEs: 'Las púas matan al instante. Si uno muere, mueren los dos.',
+    hintFr: "Les pointes tuent instantanément. Si l'un meurt, vous mourez tous les deux.",
+    hintJa: 'トゲは即死。どちらかが死ねば、両方とも死ぬ。',
+    hintKo: '가시는 즉사한다. 하나가 죽으면 둘 다 죽는다.',
     worlds: [
       {
         flipX: false,
@@ -147,8 +179,16 @@ export const LEVELS = [
   {
     name: 'Stair',
     nameZh: '阶梯',
+    nameEs: 'Escalera',
+    nameFr: 'Escalier',
+    nameJa: '階段',
+    nameKo: '계단',
     hint: 'One of you climbs. The other has to survive the same jumps.',
     hintZh: '一个你在攀爬。另一个必须在同样的跳跃中活下来。',
+    hintEs: 'Uno de ustedes sube. El otro debe sobrevivir los mismos saltos.',
+    hintFr: "L'un de vous grimpe. L'autre doit survivre aux mêmes sauts.",
+    hintJa: '一人は登る。もう一人は同じジャンプを生き延びなければならない。',
+    hintKo: '한 명은 오른다. 다른 한 명은 같은 점프에서 살아남아야 한다.',
     worlds: [
       {
         flipX: false,
@@ -180,8 +220,16 @@ export const LEVELS = [
   {
     name: 'Ceiling',
     nameZh: '天花板',
+    nameEs: 'Techo',
+    nameFr: 'Plafond',
+    nameJa: '天井',
+    nameKo: '천장',
     hint: 'Low roof on one side. Jump in the wrong place and you crack your head.',
     hintZh: '一侧的屋顶很低。跳错地方就会撞破头。',
+    hintEs: 'Techo bajo en un lado. Salta en el lugar equivocado y te rompes la cabeza.',
+    hintFr: "Plafond bas d'un côté. Saute au mauvais endroit et tu te fends le crâne.",
+    hintJa: '片側の天井が低い。間違った場所で跳べば頭を打つ。',
+    hintKo: '한쪽은 천장이 낮다. 잘못된 곳에서 점프하면 머리를 부딪힌다.',
     worlds: [
       {
         flipX: false,
@@ -213,8 +261,16 @@ export const LEVELS = [
   {
     name: 'Pillar',
     nameZh: '石柱',
+    nameEs: 'Pilar',
+    nameFr: 'Pilier',
+    nameJa: '柱',
+    nameKo: '기둥',
     hint: 'Nothing is symmetric any more.',
     hintZh: '一切都不再对称了。',
+    hintEs: 'Ya nada es simétrico.',
+    hintFr: 'Plus rien n\'est symétrique.',
+    hintJa: 'もう何も対称ではない。',
+    hintKo: '이제 아무것도 대칭이 아니다.',
     worlds: [
       {
         flipX: false,
@@ -246,8 +302,16 @@ export const LEVELS = [
   {
     name: 'Upside',
     nameZh: '倒悬',
+    nameEs: 'Cabeza Abajo',
+    nameFr: 'Sens Dessus Dessous',
+    nameJa: '逆さ',
+    nameKo: '거꾸로',
     hint: 'A third you, and gravity has opinions. Jump pushes them at the ceiling.',
     hintZh: '第三个你,而且重力有自己的想法。跳跃会把他推向天花板。',
+    hintEs: 'Un tercer tú, y la gravedad tiene opiniones. Saltar lo empuja hacia el techo.',
+    hintFr: "Un troisième toi, et la gravité a son mot à dire. Sauter le pousse vers le plafond.",
+    hintJa: '三人目のあなた。そして重力にも言い分がある。ジャンプは彼を天井へ押しやる。',
+    hintKo: '세 번째 당신, 그리고 중력에도 생각이 있다. 점프는 그를 천장으로 밀어붙인다.',
     worlds: [
       {
         flipX: false,
@@ -292,8 +356,16 @@ export const LEVELS = [
   {
     name: 'Inverted',
     nameZh: '倒转',
+    nameEs: 'Invertido',
+    nameFr: 'Inversé',
+    nameJa: '倒転',
+    nameKo: '반전',
     hint: 'Three of you now. The ceiling world has a gap too.',
     hintZh: '现在有三个你了。天花板世界里也有一个缺口。',
+    hintEs: 'Ahora son tres. El mundo del techo también tiene un hueco.',
+    hintFr: 'Vous êtes trois maintenant. Le monde du plafond a aussi un trou.',
+    hintJa: '今や三人。天井世界にも隙間がある。',
+    hintKo: '이제 셋이다. 천장 세계에도 틈이 있다.',
     worlds: [
       {
         flipX: false,
@@ -338,8 +410,16 @@ export const LEVELS = [
   {
     name: 'Bindfast',
     nameZh: '速缚',
+    nameEs: 'Atadura Veloz',
+    nameFr: 'Lien Rapide',
+    nameJa: '速縛',
+    nameKo: '속박',
     hint: 'Two of you go one way, one goes the other, and the ceiling has a hole.',
     hintZh: '两个你走一个方向,另一个走反方向,天花板上还有个洞。',
+    hintEs: 'Dos de ustedes van en una dirección, uno en la otra, y el techo tiene un agujero.',
+    hintFr: "Deux d'entre vous vont dans un sens, un dans l'autre, et le plafond a un trou.",
+    hintJa: '二人は一方へ、一人は逆へ。そして天井には穴がある。',
+    hintKo: '둘은 한쪽으로, 하나는 반대쪽으로, 그리고 천장에는 구멍이 있다.',
     worlds: [
       {
         flipX: false,

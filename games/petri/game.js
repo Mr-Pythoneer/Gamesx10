@@ -6,9 +6,67 @@
 import {
   boot, RNG, Palette, clamp, text, roundRect, allFinite, registerSelftest,
   Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
-  T, mountLangToggle,
+  T, mountLangToggle, registerTranslations,
 } from '../../shared/kit.js';
 import { PATTERNS, patternById, rotatePattern, patternBounds, stampPattern } from './patterns.js';
+
+registerTranslations({
+  'PATTERNS': { es: 'PATRONES', fr: 'MOTIFS', ja: 'パターン', ko: '패턴' },
+  'TERRITORY': { es: 'TERRITORIO', fr: 'TERRITOIRE', ja: '領地', ko: '영토' },
+  'BIOMASS': { es: 'BIOMASA', fr: 'BIOMASSE', ja: 'バイオマス', ko: '바이오매스' },
+  'TIME': { es: 'TIEMPO', fr: 'TEMPS', ja: 'タイム', ko: '시간' },
+  'LEVEL': { es: 'NIVEL', fr: 'NIVEAU', ja: 'レベル', ko: '레벨' },
+  'PETRI': { es: 'PETRI', fr: 'PETRI', ja: 'ペトリ', ko: '페트리' },
+  "seed it, don't steer it": {
+    es: 'siémbralo, no lo dirijas',
+    fr: 'semez-le, ne le pilotez pas',
+    ja: '種をまけ、操るな',
+    ko: '씨를 뿌려라, 조종하지 마라',
+  },
+  'You never move a unit. You spend biomass to stamp living patterns onto': {
+    es: 'Nunca mueves una unidad. Gastas biomasa para estampar patrones vivos',
+    fr: "Vous ne déplacez jamais une unité. Vous dépensez de la biomasse pour",
+    ja: 'ユニットを直接動かすことはない。バイオマスを使って生きたパターンを',
+    ko: '유닛을 직접 움직이지 않는다. 바이오매스를 소모해 살아있는 패턴을',
+  },
+  'the dish, and they spread, collide and consume on their own.': {
+    es: 'en el plato, y se propagan, chocan y se consumen por sí solos.',
+    fr: "tamponner des motifs vivants sur la boîte, qui se propagent, se heurtent et se consument seuls.",
+    ja: 'シャーレに刻印する。あとは自ら広がり、衝突し、食い合う。',
+    ko: '접시에 새겨 넣는다. 그러면 스스로 퍼지고, 부딪히고, 잡아먹는다.',
+  },
+  '1-6 pick a pattern  ·  R rotates it  ·  click stamps it': {
+    es: '1-6 elige un patrón  ·  R lo rota  ·  clic lo estampa',
+    fr: '1-6 choisir un motif  ·  R le fait pivoter  ·  clic pour tamponner',
+    ja: '1-6でパターン選択  ·  Rで回転  ·  クリックで刻印',
+    ko: '1-6 패턴 선택  ·  R 회전  ·  클릭으로 찍기',
+  },
+  'PRESS SPACE': { es: 'PULSA ESPACIO', fr: 'APPUYEZ SUR ESPACE', ja: 'スペースキーを押す', ko: '스페이스바를 누르세요' },
+  'TERRITORY SECURED': { es: 'TERRITORIO ASEGURADO', fr: 'TERRITOIRE SÉCURISÉ', ja: '領地確保', ko: '영토 확보' },
+  'COLONY LOST': { es: 'COLONIA PERDIDA', fr: 'COLONIE PERDUE', ja: 'コロニー壊滅', ko: '군락 붕괴' },
+  'PRESS SPACE FOR THE NEXT COLONY': {
+    es: 'PULSA ESPACIO PARA LA SIGUIENTE COLONIA',
+    fr: 'APPUYEZ SUR ESPACE POUR LA COLONIE SUIVANTE',
+    ja: 'スペースキーで次のコロニーへ',
+    ko: '스페이스바로 다음 군락으로',
+  },
+  'PRESS SPACE TO RETRY': { es: 'PULSA ESPACIO PARA REINTENTAR', fr: 'APPUYEZ SUR ESPACE POUR RÉESSAYER', ja: 'スペースキーでリトライ', ko: '스페이스바로 재시도' },
+  // pattern palette (patterns.js is out of scope to edit, but its T(p.name, ...) call sites
+  // resolve through this registry same as any other)
+  'Block': { es: 'Bloque', fr: 'Bloc', ja: 'ブロック', ko: '블록' },
+  'Blinker': { es: 'Parpadeador', fr: 'Clignotant', ja: 'ブリンカー', ko: '블링커' },
+  'Glider': { es: 'Planeador', fr: 'Planeur', ja: 'グライダー', ko: '글라이더' },
+  'LWSS': { es: 'LWSS', fr: 'LWSS', ja: 'LWSS', ko: 'LWSS' },
+  'Gun': { es: 'Cañón', fr: 'Canon', ja: 'ガン', ko: '건' },
+  'Seed': { es: 'Semilla', fr: 'Graine', ja: 'シード', ko: '씨앗' },
+  // original campaign level names (LEVELS indices 0-4); the other 45 are procedurally
+  // generated and out of scope
+  'Spore': { es: 'Espora', fr: 'Spore', ja: '胞子', ko: '포자' },
+  'Colony': { es: 'Colonia', fr: 'Colonie', ja: 'コロニー', ko: '군락' },
+  'Bloom': { es: 'Floración', fr: 'Floraison', ja: '開花', ko: '개화' },
+  'Swarm': { es: 'Enjambre', fr: 'Essaim', ja: '群れ', ko: '무리' },
+  'Hive': { es: 'Colmena', fr: 'Ruche', ja: '巣', ko: '벌집' },
+});
 
 // ---------------------------------------------------------------- constants
 

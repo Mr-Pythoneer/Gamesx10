@@ -10,9 +10,64 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle, currentLang,
+  T, mountLangToggle, currentLang, registerTranslations,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
+
+registerTranslations({
+  'MIRROR': { es: 'Espejo', fr: 'Miroir', ja: 'ミラー', ko: '미러' },
+  'MIRRORED': { es: 'Espejado', fr: 'Miroir', ja: 'ミラー世界', ko: '거울 세계' },
+  'NORMAL': { es: 'Normal', fr: 'Normal', ja: 'ノーマル', ko: '노멀' },
+  'Level': { es: 'Nivel', fr: 'Niveau', ja: 'レベル', ko: '레벨' },
+  'Chamber': { es: 'Cámara', fr: 'Chambre', ja: '部屋', ko: '방' },
+  'Deaths': { es: 'Muertes', fr: 'Morts', ja: '死亡回数', ko: '사망' },
+  'Bound': { es: 'Ligado', fr: 'Lié', ja: '束縛', ko: '결속' },
+  'Chamber Clear': { es: 'Cámara Superada', fr: 'Chambre Dégagée', ja: 'チェンバークリア', ko: '챔버 클리어' },
+  'MIRRORBIND': { es: 'VÍNCULO ESPEJO', fr: 'LIEN MIROIR', ja: 'ミラーバインド', ko: '미러바인드' },
+  'One input moves every version of you.': {
+    es: 'Una sola entrada mueve a todas tus versiones.',
+    fr: 'Une seule entrée déplace toutes tes versions.',
+    ja: '一つの操作が、あなたの全ての分身を動かす。',
+    ko: '하나의 입력이 당신의 모든 버전을 움직인다.',
+  },
+  'Mirrored worlds read your left as their right.': {
+    es: 'Los mundos espejados leen tu izquierda como su derecha.',
+    fr: 'Les mondes miroirs lisent ta gauche comme leur droite.',
+    ja: '鏡の世界では、あなたの左が彼らの右になる。',
+    ko: '거울 세계는 당신의 왼쪽을 그들의 오른쪽으로 읽는다.',
+  },
+  'Inverted worlds fall the other way.': {
+    es: 'Los mundos invertidos caen al revés.',
+    fr: "Les mondes inversés tombent dans l'autre sens.",
+    ja: '倒転した世界は、逆方向に落ちる。',
+    ko: '반전된 세계는 반대 방향으로 떨어진다.',
+  },
+  'If one of you dies, all of you die.': {
+    es: 'Si uno de ustedes muere, todos mueren.',
+    fr: "Si l'un de vous meurt, vous mourez tous.",
+    ja: '一人が死ねば、全員が死ぬ。',
+    ko: '하나가 죽으면, 모두가 죽는다.',
+  },
+  'ARROWS / A D to move · SPACE jump · R retry': {
+    es: 'FLECHAS / A D para moverte · ESPACIO saltar · R reintentar',
+    fr: 'FLÈCHES / A D pour bouger · ESPACE sauter · R recommencer',
+    ja: '矢印 / A D で移動 · SPACE でジャンプ · R でリトライ',
+    ko: '화살표 / A D 이동 · SPACE 점프 · R 재시도',
+  },
+  'PRESS SPACE': { es: 'PULSA ESPACIO', fr: 'APPUYEZ SUR ESPACE', ja: 'SPACEを押して', ko: 'SPACE 눌러 시작' },
+  'Every mirror walked itself home.': {
+    es: 'Cada espejo caminó de vuelta a casa.',
+    fr: 'Chaque miroir est rentré chez lui.',
+    ja: 'すべての鏡が、自分の足で家に帰った。',
+    ko: '모든 거울이 스스로 집으로 걸어갔다.',
+  },
+  'ENTER TO RUN IT BACK': {
+    es: 'ENTER PARA JUGAR DE NUEVO',
+    fr: 'ENTRÉE POUR REJOUER',
+    ja: 'ENTERでもう一度',
+    ko: 'ENTER로 다시 플레이',
+  },
+});
 
 // ---------------------------------------------------------------- tuning
 

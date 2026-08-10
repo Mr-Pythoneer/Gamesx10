@@ -19,11 +19,79 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, randomSeedString, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle,
+  T, mountLangToggle, registerTranslations,
 } from '../../shared/kit.js';
 import { compose, verifyChart, PHYS } from './compose.js';
 import { makeSim, stepSim, autoRun, idleRun, playerHeight } from './sim.js';
 import { Sequencer } from './synth.js';
+
+registerTranslations({
+  'SCORE': { es: 'PUNTOS', fr: 'SCORE', ja: 'スコア', ko: '점수' },
+  'LIVES': { es: 'VIDAS', fr: 'VIES', ja: 'ライフ', ko: '목숨' },
+  'COMBO': { es: 'COMBO', fr: 'COMBO', ja: 'コンボ', ko: '콤보' },
+  'MULT': { es: 'MULT', fr: 'MULT', ja: '倍率', ko: '배율' },
+  'STAGE': { es: 'ETAPA', fr: 'NIVEAU', ja: 'ステージ', ko: '스테이지' },
+  'SEED': { es: 'SEMILLA', fr: 'GRAINE', ja: 'シード', ko: '시드' },
+  'BPM': { es: 'BPM', fr: 'BPM', ja: 'BPM', ko: 'BPM' },
+  'KEY': { es: 'TONO', fr: 'TON', ja: '調', ko: '조성' },
+  'PERFECT': { es: 'PERFECTO', fr: 'PARFAIT', ja: 'パーフェクト', ko: '퍼펙트' },
+  'GOOD': { es: 'BIEN', fr: 'BIEN', ja: 'グッド', ko: '굿' },
+  'MUTED': { es: 'SILENCIADO', fr: 'MUET', ja: 'ミュート中', ko: '음소거됨' },
+  'CAMPAIGN': { es: 'CAMPAÑA', fr: 'CAMPAGNE', ja: 'キャンペーン', ko: '캠페인' },
+  'ARROWS move  ·  SPACE play  ·  ESC back': {
+    es: 'FLECHAS mover  ·  ESPACIO jugar  ·  ESC volver',
+    fr: 'FLÈCHES déplacer  ·  ESPACE jouer  ·  ÉCHAP retour',
+    ja: '矢印キーで移動  ·  SPACEでプレイ  ·  ESCで戻る',
+    ko: '방향키 이동  ·  SPACE 플레이  ·  ESC 뒤로',
+  },
+  'PULSE': { es: 'PULSE', fr: 'PULSE', ja: 'パルス', ko: '펄스' },
+  'The seed writes the song.': {
+    es: 'La semilla escribe la canción.',
+    fr: 'La graine écrit la chanson.',
+    ja: 'シードが曲を書く。',
+    ko: '시드가 노래를 만든다.',
+  },
+  'The seed writes the song. The song writes the level.': {
+    es: 'La semilla escribe la canción. La canción escribe el nivel.',
+    fr: 'La graine écrit la chanson. La chanson écrit le niveau.',
+    ja: 'シードが曲を書き、曲がレベルを書く。',
+    ko: '시드가 노래를 만들고, 노래가 레벨을 만든다.',
+  },
+  'SPACE / CLICK — jump  (hold for height)': {
+    es: 'ESPACIO / CLIC — saltar  (mantén para más altura)',
+    fr: 'ESPACE / CLIC — sauter  (maintenir pour plus de hauteur)',
+    ja: 'SPACE / クリック — ジャンプ(長押しで高く)',
+    ko: 'SPACE / 클릭 — 점프  (누르고 있으면 더 높이)',
+  },
+  'SPACE again midair — slam down and slide under': {
+    es: 'ESPACIO de nuevo en el aire — caída y deslizamiento por debajo',
+    fr: 'ESPACE à nouveau en l’air — plaquage au sol et glissade',
+    ja: '空中で再度SPACE — 急降下して滑り込む',
+    ko: '공중에서 다시 SPACE — 내리찍고 미끄러지기',
+  },
+  'PRESS SPACE  ·  L for Campaign': {
+    es: 'PULSA ESPACIO  ·  L para Campaña',
+    fr: 'APPUYEZ SUR ESPACE  ·  L pour Campagne',
+    ja: 'SPACEを押す  ·  Lでキャンペーン',
+    ko: 'SPACE 누르기  ·  L 캠페인',
+  },
+  'TRACK CLEARED': { es: 'PISTA SUPERADA', fr: 'MORCEAU TERMINÉ', ja: 'トラッククリア', ko: '트랙 클리어' },
+  'RUN ENDED': { es: 'PARTIDA TERMINADA', fr: 'PARTIE TERMINÉE', ja: 'ラン終了', ko: '런 종료' },
+  'SPACE next  ·  L stage select  ·  ESC free play': {
+    es: 'ESPACIO siguiente  ·  L selección de etapa  ·  ESC juego libre',
+    fr: 'ESPACE suivant  ·  L sélection du niveau  ·  ÉCHAP jeu libre',
+    ja: 'SPACEで次へ  ·  Lでステージ選択  ·  ESCでフリープレイ',
+    ko: 'SPACE 다음  ·  L 스테이지 선택  ·  ESC 자유 플레이',
+  },
+  'SPACE retry  ·  N new seed  ·  S type a seed  ·  C copy  ·  L Campaign': {
+    es: 'ESPACIO reintentar  ·  N nueva semilla  ·  S escribir semilla  ·  C copiar  ·  L Campaña',
+    fr: 'ESPACE réessayer  ·  N nouvelle graine  ·  S saisir une graine  ·  C copier  ·  L Campagne',
+    ja: 'SPACEでリトライ  ·  Nで新しいシード  ·  Sでシード入力  ·  Cでコピー  ·  Lでキャンペーン',
+    ko: 'SPACE 재시도  ·  N 새 시드  ·  S 시드 입력  ·  C 복사  ·  L 캠페인',
+  },
+  'FINAL SCORE': { es: 'PUNTUACIÓN FINAL', fr: 'SCORE FINAL', ja: '最終スコア', ko: '최종 점수' },
+  'seed': { es: 'semilla', fr: 'graine', ja: 'シード', ko: '시드' },
+});
 
 const { SPIKE_H, CEIL_BOTTOM, PLAYER_W_T, LIVES } = PHYS;
 

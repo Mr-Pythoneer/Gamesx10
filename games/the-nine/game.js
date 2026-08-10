@@ -14,8 +14,131 @@
 import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   RNG, randomSeedString, clamp, text, roundRect, allFinite, TAU,
-  T, mountLangToggle,
+  T, mountLangToggle, registerTranslations,
 } from '../../shared/kit.js';
+
+// ---------------------------------------------------------------- ES/FR/JA/KO registry
+// Every English string used as T()'s first argument anywhere in this file (including via
+// the tierLabel/tierBlurb/attrLabel/msgText helpers below) gets an entry here. Chinese is
+// unaffected — it stays on the existing T(en, zh) positional argument. Strings that are
+// built from template literals with runtime values (case numbers, seeds, berth numbers)
+// can't be registered by exact key, so they fall back to English under ES/FR/JA/KO — same
+// as they already silently do for any language once the value varies.
+registerTranslations({
+  // status messages (msgText)
+  'Read the papers. Fill the roster. Confirm three at once.': {
+    es: 'Lee los documentos. Completa el registro. Confirma tres a la vez.',
+    fr: "Lisez les papiers. Remplissez le registre. Confirmez-en trois à la fois.",
+    ja: '文書を読み、名簿を埋めよ。一度に三つ確定せよ。',
+    ko: '문서를 읽어라. 명부를 채워라. 한 번에 세 개를 확인하라.',
+  },
+  'Assign at least three before confirming.': {
+    es: 'Asigna al menos tres antes de confirmar.',
+    fr: 'Assignez-en au moins trois avant de confirmer.',
+    ja: '確定前に少なくとも三つ割り当てよ。',
+    ko: '확인하기 전 최소 세 개를 배정하라.',
+  },
+  'No three hold together.': {
+    es: 'Ningún trío se sostiene.',
+    fr: 'Aucun trio ne tient ensemble.',
+    ja: '三つ同時に成り立つ組はない。',
+    ko: '세 개가 동시에 성립하지 않는다.',
+  },
+  ' held. They are yours for good.': {
+    es: ' asegurados. Son tuyos para siempre.',
+    fr: ' verrouillés. Ils sont à vous pour toujours.',
+    ja: ' 件確定。永久にあなたのものだ。',
+    ko: '개 확정. 영원히 당신의 것이다.',
+  },
+  'Proven. That one cannot change.': {
+    es: 'Comprobado. Eso ya no puede cambiar.',
+    fr: 'Prouvé. Cela ne peut plus changer.',
+    ja: '証明済み。それはもう変わらない。',
+    ko: '증명됨. 그것은 더 이상 바뀌지 않는다.',
+  },
+  // footer buttons / labels
+  'CONFIRM': { es: 'CONFIRMAR', fr: 'CONFIRMER', ja: '確定', ko: '확인' },
+  'CLEAR': { es: 'BORRAR', fr: 'EFFACER', ja: 'クリア', ko: '지우기' },
+  'NEW': { es: 'NUEVA', fr: 'NOUVEAU', ja: '新規', ko: '새로' },
+  'ROSTER': { es: 'REGISTRO', fr: 'REGISTRE', ja: '名簿', ko: '명부' },
+  'PAPERS': { es: 'DOCUMENTOS', fr: 'PAPIERS', ja: '文書', ko: '문서' },
+  'CASES': { es: 'CASOS', fr: 'AFFAIRES', ja: '事件簿', ko: '사건' },
+  'CONFIRM  ⏎': { es: 'CONFIRMAR  ⏎', fr: 'CONFIRMER  ⏎', ja: '確定  ⏎', ko: '확인  ⏎' },
+  'NEW SEED': { es: 'NUEVA SEMILLA', fr: 'NOUVELLE GRAINE', ja: '新しいシード', ko: '새 시드' },
+  // header labels
+  'THE CAMPAIGN': { es: 'LA CAMPAÑA', fr: 'LA CAMPAGNE', ja: '事件簿一覧', ko: '캠페인' },
+  'CASE': { es: 'CASO', fr: 'AFFAIRE', ja: '事件', ko: '사건' },
+  'SEED': { es: 'SEMILLA', fr: 'GRAINE', ja: 'シード', ko: '시드' },
+  'PROVEN': { es: 'PROBADO', fr: 'PROUVÉ', ja: '証明済み', ko: '증명됨' },
+  'CONFIRMS': { es: 'CONFIRMACIONES', fr: 'CONFIRMATIONS', ja: '確定回数', ko: '확인 횟수' },
+  'BERTH': { es: 'LITERA', fr: 'COUCHETTE', ja: '寝台', ko: '침상' },
+  'THE PAPERS': { es: 'LOS DOCUMENTOS', fr: 'LES PAPIERS', ja: '文書', ko: '문서' },
+  // intro card
+  'THE NINE': { es: 'LOS NUEVE', fr: 'LES NEUF', ja: '九人', ko: '아홉 명' },
+  'Nine berths. Nine names. Nine ends.': {
+    es: 'Nueve literas. Nueve nombres. Nueve finales.',
+    fr: 'Neuf couchettes. Neuf noms. Neuf destins.',
+    ja: '九つの寝台。九つの名前。九つの結末。',
+    ko: '아홉 개의 침상. 아홉 개의 이름. 아홉 개의 결말.',
+  },
+  'The papers survive. The crew does not. Work out who slept where.': {
+    es: 'Los documentos sobreviven. La tripulación no. Averigua quién dormía dónde.',
+    fr: "Les papiers survivent. L'équipage non. Découvrez qui dormait où.",
+    ja: '文書は残った。乗組員は残らなかった。誰がどこで眠ったか突き止めよ。',
+    ko: '문서는 남았다. 선원은 남지 않았다. 누가 어디서 잤는지 알아내라.',
+  },
+  'CONFIRM three or more correct at once and they lock in FOREVER.': {
+    es: 'CONFIRMA tres o más aciertos a la vez y quedan bloqueados PARA SIEMPRE.',
+    fr: 'CONFIRMEZ trois réponses correctes ou plus à la fois et elles se verrouillent À JAMAIS.',
+    ja: '一度に三つ以上正解してCONFIRMすると、永久に確定する。',
+    ko: '한 번에 세 개 이상을 맞혀 확인하면 영원히 고정된다.',
+  },
+  'Fewer than three, and nothing is revealed. Guessing gets you nowhere.': {
+    es: 'Menos de tres, y no se revela nada. Adivinar no sirve de nada.',
+    fr: "Moins de trois, et rien n'est révélé. Deviner ne mène à rien.",
+    ja: '三つ未満なら何も明らかにならない。当て推量は無意味だ。',
+    ko: '세 개 미만이면 아무것도 드러나지 않는다. 추측은 소용없다.',
+  },
+  'CLICK a cell to assign  ·  ENTER to confirm  ·  1 2 3 difficulty  ·  N new seed  ·  C campaign': {
+    es: 'CLIC en una celda para asignar  ·  ENTER para confirmar  ·  1 2 3 dificultad  ·  N nueva semilla  ·  C campaña',
+    fr: 'CLIC sur une case pour assigner  ·  ENTRÉE pour confirmer  ·  1 2 3 difficulté  ·  N nouvelle graine  ·  C campagne',
+    ja: 'クリックでマス割り当て  ·  ENTERで確定  ·  1 2 3 難易度  ·  N 新しいシード  ·  C 事件簿',
+    ko: '클릭으로 칸 배정  ·  ENTER로 확인  ·  1 2 3 난이도  ·  N 새 시드  ·  C 캠페인',
+  },
+  'Click a berth number to filter the papers  ·  R clears  ·  ESC backs out': {
+    es: 'Haz clic en un número de litera para filtrar los documentos  ·  R para limpiar  ·  ESC para salir',
+    fr: 'Cliquez sur un numéro de couchette pour filtrer les papiers  ·  R pour effacer  ·  ÉCHAP pour sortir',
+    ja: '寝台番号をクリックして文書を絞り込む  ·  Rでクリア  ·  ESCで戻る',
+    ko: '침상 번호를 클릭해 문서를 필터링  ·  R로 지우기  ·  ESC로 나가기',
+  },
+  'PRESS SPACE': { es: 'PULSA ESPACIO', fr: 'APPUYEZ SUR ESPACE', ja: 'スペースキーを押せ', ko: '스페이스 바를 누르세요' },
+  // fixed TIERS vocabulary (from generate.js, translated here per the existing lookup-dict pattern)
+  'CADET': { es: 'CADETE', fr: 'CADET', ja: '新兵', ko: '신병' },
+  'OFFICER': { es: 'OFICIAL', fr: 'OFFICIER', ja: '士官', ko: '장교' },
+  'ARCHIVIST': { es: 'ARCHIVISTA', fr: 'ARCHIVISTE', ja: '記録官', ko: '기록관' },
+  'Two ledgers — names and roles. The papers speak plainly.': {
+    es: 'Dos registros: nombres y funciones. Los documentos hablan con claridad.',
+    fr: 'Deux registres — noms et fonctions. Les papiers parlent clairement.',
+    ja: '二冊の台帳——氏名と役職。文書は率直に語る。',
+    ko: '두 개의 장부—이름과 직책. 문서는 명확하게 말한다.',
+  },
+  'Three ledgers — names, roles, and how each one ended.': {
+    es: 'Tres registros: nombres, funciones y cómo terminó cada uno.',
+    fr: 'Trois registres — noms, fonctions, et le sort de chacun.',
+    ja: '三冊の台帳——氏名、役職、そしてそれぞれの結末。',
+    ko: '세 개의 장부—이름, 직책, 그리고 각자의 결말.',
+  },
+  'Three ledgers, and nothing stated outright.': {
+    es: 'Tres registros, y nada dicho abiertamente.',
+    fr: "Trois registres, et rien n'est dit franchement.",
+    ja: '三冊の台帳、しかし何一つ明言されていない。',
+    ko: '세 개의 장부, 그러나 아무것도 명시되지 않았다.',
+  },
+  // fixed ATTRS vocabulary
+  'NAME': { es: 'NOMBRE', fr: 'NOM', ja: '氏名', ko: '이름' },
+  'ROLE': { es: 'FUNCIÓN', fr: 'FONCTION', ja: '役職', ko: '직책' },
+  'FATE': { es: 'DESTINO', fr: 'DESTIN', ja: '結末', ko: '운명' },
+});
 import {
   generate, countSolutions, solveFirst, positionsOf, clueHolds,
   TIERS, ATTRS, SHIP, BERTHS, valueLabel,
