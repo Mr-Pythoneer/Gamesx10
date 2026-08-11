@@ -461,6 +461,24 @@ export const Music = {
   },
 };
 
+// Stopping Music.start()'s scheduler only cancels *future* notes — anything already
+// scheduled via Sound.tone()/noise() (an OscillatorNode with its own start/stop times
+// already committed to the audio graph) keeps playing regardless, since that's a
+// property of the Web Audio graph, not of our JS timer. A chord note can be several
+// seconds long, so without this, navigating to a new page (hub -> a game, or game ->
+// game via the arcade link) can leave the old page's music audibly ringing on top of
+// whatever the new page starts — two different, unrelated tracks briefly overlapping.
+// Disconnecting Sound.master immediately silences everything routed through it (every
+// voice this kit ever produces goes through that one gain node), independent of
+// whatever stop times were already scheduled, so this reliably kills stragglers the
+// instant the page starts navigating away.
+if (typeof globalThis.addEventListener === 'function') {
+  globalThis.addEventListener('pagehide', () => {
+    Music.stop();
+    if (Sound.master) { try { Sound.master.disconnect(); } catch { /* already disconnected */ } }
+  });
+}
+
 // ---------------------------------------------------------------- Store (namespaced localStorage)
 
 export const Store = {
