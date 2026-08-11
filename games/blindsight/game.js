@@ -137,14 +137,26 @@ registerTranslations({
 // Barely-there dread: mostly silence, a faint low drone every couple dozen
 // bars and an occasional dissonant second tone. Never compete with SFX.
 
+// very long cycle of near-identical low tones, so a long session drifts between a
+// few faint pitches instead of repeating the literal same note forever — the
+// difference is only perceptible across minutes, never within a single loop
+const BLINDSIGHT_DRONES = [48, 45, 51];
+
 function blindsightMusic(step, atTime, gain) {
   const at = atTime - Sound.ctx.currentTime;
+  const cycle = Math.floor(step / 256) % BLINDSIGHT_DRONES.length;
+  const drone = BLINDSIGHT_DRONES[cycle];
   if (step % 48 === 0) {
-    Sound.tone({ freq: 48, dur: 4.5, type: 'sine', gain: 0.02 * gain, at, attack: 1.2 });
+    Sound.tone({ freq: drone, dur: 4.5, type: 'sine', gain: 0.02 * gain, at, attack: 1.2 });
   }
   if (step % 96 === 32) {
     // faint dissonant second voice, rarer still
-    Sound.tone({ freq: 51, dur: 3.5, type: 'sine', gain: 0.012 * gain, at, attack: 1.0 });
+    Sound.tone({ freq: drone + 3, dur: 3.5, type: 'sine', gain: 0.012 * gain, at, attack: 1.0 });
+  }
+  // extremely rare, extremely faint higher "glint" — fires far less often than the
+  // drone itself, stays well under Blindsight's silence-first identity
+  if (step % 640 === 400) {
+    Sound.tone({ freq: 660 + (cycle * 40), dur: 1.8, type: 'sine', gain: 0.01 * gain, at, attack: 0.6 });
   }
 }
 

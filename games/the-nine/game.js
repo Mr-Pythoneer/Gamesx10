@@ -21,23 +21,42 @@ import {
 // D dorian-ish minor walking bassline, low register, one note per beat (quarter notes at
 // stepsPerBeat=4, so beats land on step % 4 === 0). Sparse brushed-noise on off-beats and an
 // occasional muted comping chord stab every 16 steps for a smoky detective-office feel.
-const THE_NINE_BASS = [73.4, 82.4, 87.3, 98.0, 87.3, 82.4, 73.4, 65.4]; // D2 E2 F2 G2 F2 E2 D2 C2
+// Three 8-beat "changes" the tune cycles through every 8 bars, like a real chart's
+// progression: i (D minor), then a move to the subdominant (G minor), then to the
+// relative-ish IV/bVII area (C) before resolving back — same walking-bass shape,
+// different roots each cycle.
+const THE_NINE_BASS_I   = [73.4, 82.4, 87.3, 98.0, 87.3, 82.4, 73.4, 65.4];   // D2 E2 F2 G2 F2 E2 D2 C2
+const THE_NINE_BASS_IV  = [98.0, 110.0, 116.5, 130.8, 116.5, 110.0, 98.0, 87.3]; // G2 A2 Bb2 C3 Bb2 A2 G2 F2
+const THE_NINE_BASS_bVII = [116.5, 130.8, 138.6, 146.8, 138.6, 130.8, 116.5, 110.0]; // Bb2 C3 Db3 D3 Db3 C3 Bb2 A2
+const THE_NINE_PROGRESSIONS = [THE_NINE_BASS_I, THE_NINE_BASS_IV, THE_NINE_BASS_bVII];
 function theNineMusic(step, atTime, gain) {
   const t = atTime - Sound.ctx.currentTime;
   const beat = Math.floor(step / 4);
+  // move to the next set of changes every 8 beats (2 bars), cycling through 3
+  // progressions for a 24-beat (6-bar) macro cycle before repeating.
+  const progression = THE_NINE_PROGRESSIONS[Math.floor(beat / 8) % THE_NINE_PROGRESSIONS.length];
   if (step % 4 === 0) {
     // walking bass, quarter notes
-    const freq = THE_NINE_BASS[beat % THE_NINE_BASS.length];
+    const freq = progression[beat % progression.length];
     Sound.tone({ freq, dur: 0.34, type: 'triangle', gain: 0.055 * gain, at: t });
   } else if (step % 4 === 2) {
-    // brushed percussion texture on the off-beat
+    // brushed percussion / muted ride texture on the off-beat
     Sound.noise({ dur: 0.045, gain: 0.014 * gain, type: 'highpass', freq: 3200, at: t });
   }
   if (step % 16 === 8) {
     // sparse muted comping chord stab (minor third dyad)
-    const root = THE_NINE_BASS[beat % THE_NINE_BASS.length] * 2;
+    const root = progression[beat % progression.length] * 2;
     Sound.tone({ freq: root, dur: 0.12, type: 'sine', gain: 0.03 * gain, at: t });
     Sound.tone({ freq: root * 1.189, dur: 0.12, type: 'sine', gain: 0.025 * gain, at: t });
+  }
+  // sparse higher countermelody that answers the bass every other bar, landing
+  // an octave-plus above the current root for a smoky, muted-trumpet feel.
+  if (step % 32 === 20) {
+    const root = progression[beat % progression.length];
+    Sound.tone({ freq: root * 3, dur: 0.22, type: 'sine', gain: 0.026 * gain, at: t });
+  } else if (step % 32 === 24) {
+    const root = progression[beat % progression.length];
+    Sound.tone({ freq: root * 3 * 1.122, dur: 0.22, type: 'sine', gain: 0.024 * gain, at: t });
   }
 }
 

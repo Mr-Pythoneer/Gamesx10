@@ -24,15 +24,28 @@ import { HOLES, TOTAL_PAR } from './holes.js';
 
 // --- ambient background music: slow D-dorian pad with a sparse, distant arpeggio.
 // Kept quiet and spacious to sit under the physics puzzle without distracting from it.
+// The pattern moves through four harmonic sections over a long macro-cycle (each section
+// is 4 bars of 16 steps = 64 steps, ~55s at 70bpm) so it reads as a slowly drifting piece
+// rather than a short loop, plus a slow filtered "solar wind" noise texture underneath.
 const ORBITAL_PAD = [73.42, 87.31, 98.00, 110.00];        // D2 F2 G2 A2 — dorian drone/pad tones
 const ORBITAL_TWINKLE = [587.33, 698.46, 783.99, 880.00, 1046.50]; // D5 F5 G5 A5 C6 — distant twinkles
+// Four sections: each re-voices the dorian pad as a different chord shape (root spread,
+// open fifth, added-sixth, and a darker inverted voicing) so the drone itself evolves.
+const ORBITAL_SECTIONS = [
+  [0, 2, 1, 3], // i - iv - iii - v-ish spread
+  [1, 3, 0, 2], // shifted rotation, brighter
+  [2, 0, 3, 1], // open-fifth feel
+  [3, 1, 2, 0], // darker inversion
+];
 function orbitalMusic(step, atTime, gain) {
   const t = atTime - Sound.ctx.currentTime;
   const bar = Math.floor(step / 16) % 4;
-  // slow pad, one long note every 4 beats (16 steps), cycling through the chord
+  const section = ORBITAL_SECTIONS[Math.floor(step / 64) % ORBITAL_SECTIONS.length];
+  const chordIdx = section[bar];
+  // slow pad, one long note every 4 beats (16 steps), cycling through the section's chord
   if (step % 16 === 0) {
-    Sound.tone({ freq: ORBITAL_PAD[bar % ORBITAL_PAD.length], dur: 3.4, type: 'sine', gain: 0.045 * gain, at: t });
-    Sound.tone({ freq: ORBITAL_PAD[bar % ORBITAL_PAD.length] * 1.5, dur: 3.0, type: 'sine', gain: 0.02 * gain, at: t });
+    Sound.tone({ freq: ORBITAL_PAD[chordIdx], dur: 3.4, type: 'sine', gain: 0.045 * gain, at: t });
+    Sound.tone({ freq: ORBITAL_PAD[chordIdx] * 1.5, dur: 3.0, type: 'sine', gain: 0.02 * gain, at: t });
   }
   // occasional distant twinkle, sparse and irregular-feeling
   if (step % 24 === 6) {
@@ -42,6 +55,18 @@ function orbitalMusic(step, atTime, gain) {
   if (step % 40 === 30) {
     const n = ORBITAL_TWINKLE[((step / 40 | 0) + 2) % ORBITAL_TWINKLE.length];
     Sound.tone({ freq: n * 2, dur: 0.6, type: 'sine', gain: 0.02 * gain, at: t });
+  }
+  // solar wind: slow swelling noise texture, once per 8-bar phrase, drifting in pitch feel
+  // via duration/gain variance across the macro-cycle so it never sounds mechanically identical
+  if (step % 128 === 96) {
+    const phrase = Math.floor(step / 128) % 3;
+    Sound.noise({ dur: 5.0 + phrase * 1.5, gain: 0.02 * gain, at: t });
+  }
+  // slow countermelody line, offset from the twinkles, only present every other section
+  // so it feels like a voice that comes and goes rather than a fixed layer
+  if (Math.floor(step / 64) % 2 === 1 && step % 32 === 20) {
+    const n = ORBITAL_TWINKLE[(chordIdx + 1) % ORBITAL_TWINKLE.length] / 2;
+    Sound.tone({ freq: n, dur: 2.2, type: 'triangle', gain: 0.025 * gain, at: t });
   }
 }
 

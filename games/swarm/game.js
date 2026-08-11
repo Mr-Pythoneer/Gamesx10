@@ -2030,12 +2030,20 @@ mountResetButton('swarm');
 
 // ---------------------------------------------------------------- background music
 // Driving 16-step loop: four-on-the-floor kick on 0/4/8/12, a low bass pulse on the
-// offbeat eighths, and a short aggressive square-wave riff riding on top. Loops as a
-// single tight bar so it never feels like it's "resetting" mid-run.
+// offbeat eighths, and a short aggressive square-wave riff riding on top. The riff and
+// bass root rotate through a small progression over an 8-bar macro-cycle so the loop
+// keeps moving instead of grinding on one bar forever, and a hi-hat pattern plus a
+// call-and-response second riff (alternating bars with the main riff) add texture.
 const SWARM_RIFF = [220, 220, 262, 294, 330, 294, 262, 220]; // A3-ish arpeggio, 8 slots
+const SWARM_RIFF_B = [196, 233, 196, 262, 220, 262, 233, 196]; // response riff, G3-ish, darker
+// bass root per bar (0-7 of the 8-bar macro-cycle): i - i - VI - VII - i - iv - VI - VII feel
+const SWARM_BASS_ROOTS = [110, 110, 131, 147, 110, 98, 131, 147];
 function swarmMusic(step, atTime, gain) {
   const t = atTime - Sound.ctx.currentTime;
   const s = step % 16;
+  const bar = Math.floor(step / 16) % 8; // 8-bar macro-cycle
+  const bassRoot = SWARM_BASS_ROOTS[bar];
+  const callAndResponse = bar % 2 === 1; // odd bars answer with the second riff
 
   // kick: punchy low thud on the quarter notes
   if (s % 4 === 0) {
@@ -2043,19 +2051,21 @@ function swarmMusic(step, atTime, gain) {
     Sound.noise({ dur: 0.03, gain: 0.03 * gain, at: t });
   }
 
-  // bass: root note on the "and" of each beat, driving the pulse forward
+  // bass: root note on the "and" of each beat, driving the pulse forward, root shifts by bar
   if (s % 4 === 2) {
-    Sound.tone({ freq: 110, dur: 0.14, type: 'square', gain: 0.06 * gain, at: t });
+    Sound.tone({ freq: bassRoot, dur: 0.14, type: 'square', gain: 0.06 * gain, at: t });
   }
 
-  // riff: short aggressive arpeggio on every offbeat 8th step
+  // riff: short aggressive arpeggio on every offbeat 8th step; alternates call/response by bar
   if (s % 2 === 1) {
-    const note = SWARM_RIFF[(s >> 1) % SWARM_RIFF.length];
+    const riffSet = callAndResponse ? SWARM_RIFF_B : SWARM_RIFF;
+    const note = riffSet[(s >> 1) % riffSet.length];
     Sound.tone({ freq: note, dur: 0.09, type: 'sawtooth', gain: 0.035 * gain, at: t });
   }
 
-  // hat: light tick on every step to keep the pulse tight
-  Sound.noise({ dur: 0.015, gain: 0.012 * gain, at: t });
+  // hat: closed tick every step, with an open accent on the "and" of beat 2 and 4
+  const hatAccent = (s === 6 || s === 14);
+  Sound.noise({ dur: hatAccent ? 0.05 : 0.015, gain: (hatAccent ? 0.02 : 0.012) * gain, at: t });
 }
 const startSwarmMusic = () => { if (Sound.ctx && !Music.playing) Music.start(swarmMusic, { bpm: 128, gain: 1 }); };
 addEventListener('pointerdown', startSwarmMusic, { once: false });

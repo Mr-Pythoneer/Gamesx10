@@ -188,6 +188,25 @@
     transition: color 0.15s, border-color 0.15s;
   }
   .lang-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .mute-btn {
+    position: fixed;
+    top: 18px;
+    right: 92px;
+    z-index: 20;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 2px;
+    padding: 6px 13px;
+    cursor: pointer;
+  }
+  .mute-btn:hover { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 620px) {
+    .mute-btn { top: 12px; right: 76px; padding: 5px 11px; }
+  }
   /* CJK/Hangul need their own system fonts — the Latin mono/serif stack has no glyphs
      for them at all. Spanish/French stay on the default Latin stack, no rule needed. */
   html[lang="zh"] .lang-btn, html[lang="ja"] .lang-btn, html[lang="ko"] .lang-btn {
@@ -217,6 +236,7 @@
 <div class="wrap">
 
   <button id="langBtn" class="lang-btn" type="button" aria-label="切换语言 / switch language">中文</button>
+  <button id="muteBtn" class="mute-btn" type="button" aria-label="mute music">♪</button>
 
   <header class="masthead">
     <div>
@@ -257,6 +277,70 @@
 </div>
 
 <script type="module">
+import { Sound, Music } from './shared/kit.js';
+
+// ---------------------------------------------------------------- lobby music
+//
+// A relaxed, welcoming loop — not tied to any one game's genre, since this is the
+// front door to all ten. Warm sine/triangle chords over a soft arpeggio, with the
+// chord progression itself shifting every 8 bars so a long stay on the hub doesn't
+// loop-fatigue. Same Music/Sound engine every game uses, so the existing mute state
+// carries straight through into whichever game gets picked next.
+const LOBBY_ROOT = 196.00; // G3
+const LOBBY_PROGRESSIONS = [
+  [0, 5, 3, 4],   // I - vi - IV - V  (default "step out" feel)
+  [0, 3, 4, 3],   // I - IV - V - IV
+  [5, 3, 0, 4],   // vi - IV - I - V
+];
+const LOBBY_SCALE = [0, 2, 4, 5, 7, 9, 11]; // major
+const degToFreq = (deg) => LOBBY_ROOT * Math.pow(2, (LOBBY_SCALE[((deg % 7) + 7) % 7] + 12 * Math.floor(deg / 7)) / 12);
+
+function lobbyMusic(step, atTime, gain) {
+  const bar = Math.floor(step / 16);
+  const inBar = step % 16;
+  const prog = LOBBY_PROGRESSIONS[Math.floor(bar / 8) % LOBBY_PROGRESSIONS.length];
+  const chordRoot = prog[bar % 4];
+  const at = atTime - Sound.ctx.currentTime;
+
+  // soft sustained chord, once per bar
+  if (inBar === 0) {
+    for (const iv of [0, 2, 4]) {
+      Sound.tone({ freq: degToFreq(chordRoot + iv), dur: 3.6, type: 'sine', gain: 0.03 * gain, attack: 0.6, at });
+    }
+  }
+  // gentle arpeggio riding on top, two notes per beat
+  if (inBar % 2 === 0) {
+    const arpStep = [0, 2, 4, 7, 4, 2][(inBar / 2) % 6 | 0];
+    Sound.tone({ freq: degToFreq(chordRoot + arpStep) * 2, dur: 0.5, type: 'triangle', gain: 0.028 * gain, at });
+  }
+  // a soft low root pulse every other bar for gentle motion
+  if (inBar === 8 && bar % 2 === 1) {
+    Sound.tone({ freq: degToFreq(chordRoot) / 2, dur: 1.4, type: 'sine', gain: 0.035 * gain, at });
+  }
+}
+
+const muteBtn = document.getElementById('muteBtn');
+let lobbyMuted = localStorage.getItem('gx10:muted') === '1';
+function applyMuteUi() { muteBtn.textContent = lobbyMuted ? '♪ off' : '♪'; muteBtn.setAttribute('aria-pressed', String(lobbyMuted)); }
+applyMuteUi();
+muteBtn.addEventListener('click', () => {
+  lobbyMuted = !lobbyMuted;
+  localStorage.setItem('gx10:muted', lobbyMuted ? '1' : '0');
+  Sound.setMuted(lobbyMuted);
+  applyMuteUi();
+});
+
+function startLobbyMusic() {
+  if (Music.playing) return;
+  Sound.init();
+  if (!Sound.ctx) return;
+  Sound.resume();
+  Sound.setMuted(lobbyMuted);
+  Music.start(lobbyMusic, { bpm: 92, gain: 1 });
+}
+addEventListener('pointerdown', startLobbyMusic, { once: true });
+addEventListener('keydown', startLobbyMusic, { once: true });
+
 // span/height are hand-assigned per entry — the catalogue is deliberately uneven.
 // Each game carries both languages; the active one is picked by render(), below.
 const GAMES = [

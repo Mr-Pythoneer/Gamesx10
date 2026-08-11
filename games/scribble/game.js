@@ -220,17 +220,34 @@ function say(s, en, zh) { s.msgEn = en; s.msgZh = zh || en; s.msgT = 1.6; }
 
 // Bouncy pizzicato toybox melody: major scale, plucky triangle notes, skips
 // steps so it feels light rather than dense. Light bass pluck on downbeats.
+// A second, slightly different "response" phrase alternates in every couple
+// bars (call-and-response), and a soft wood-block tick ticks the off-beats.
 const SCRIBBLE_SCALE = [523.3, 587.3, 659.3, 784.0, 880.0, 1046.5, 880.0, 659.3]; // C D E G A C A E (major, playful)
 const SCRIBBLE_MELODY_STEPS = [0, 3, 5, 7, 10, 13, 16, 19, 22, 25, 27, 29]; // sparse, skippy within a 32-step loop
+// Response phrase: same scale, higher-reaching and slightly sparser answer.
+const SCRIBBLE_SCALE_B = [659.3, 784.0, 880.0, 1046.5, 1174.7, 880.0, 784.0, 659.3]; // E G A C D A G E
+const SCRIBBLE_MELODY_STEPS_B = [1, 4, 8, 11, 14, 18, 21, 24, 28, 30];
 function scribbleMusic(step, atTime, gain) {
   const s32 = step % 32;
   const at = atTime - Sound.ctx.currentTime;
-  if (SCRIBBLE_MELODY_STEPS.includes(s32)) {
-    const idx = SCRIBBLE_MELODY_STEPS.indexOf(s32) % SCRIBBLE_SCALE.length;
-    Sound.tone({ freq: SCRIBBLE_SCALE[idx], dur: 0.11, type: 'triangle', gain: 0.05 * gain, at });
+  const bar = Math.floor(step / 32);
+  const useB = Math.floor(bar / 2) % 2 === 1; // alternate call/response every 2 bars
+  const scale = useB ? SCRIBBLE_SCALE_B : SCRIBBLE_SCALE;
+  const steps = useB ? SCRIBBLE_MELODY_STEPS_B : SCRIBBLE_MELODY_STEPS;
+  if (steps.includes(s32)) {
+    const idx = steps.indexOf(s32) % scale.length;
+    Sound.tone({ freq: scale[idx], dur: 0.11, type: 'triangle', gain: 0.05 * gain, at });
   }
   if (s32 % 8 === 0) {
-    Sound.tone({ freq: SCRIBBLE_SCALE[0] / 2, dur: 0.14, type: 'triangle', gain: 0.035 * gain, at });
+    Sound.tone({ freq: scale[0] / 2, dur: 0.14, type: 'triangle', gain: 0.035 * gain, at });
+  }
+  // light harmony note a third above the bass on alternating downbeats
+  if (s32 % 16 === 8) {
+    Sound.tone({ freq: scale[2], dur: 0.16, type: 'triangle', gain: 0.032 * gain, at });
+  }
+  // soft wood-block-style tick on off-beats (quarter-step between melody notes)
+  if (s32 % 4 === 2) {
+    Sound.noise({ dur: 0.045, gain: 0.045 * gain, type: 'highpass', freq: 2200, at });
   }
 }
 

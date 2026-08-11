@@ -409,9 +409,15 @@ function loadLevel(s, idx) {
 // game's one-input-controls-two-mirrored-characters premise.
 const MIRRORBIND_SCALE = [0, 2, 3, 5, 7, 8, 10, 12]; // A natural minor degrees -> semitones
 const MIRRORBIND_PHRASE = [0, 2, 4, 3, 5, 4, 2, 1];  // scale-degree indices into MIRRORBIND_SCALE
+// Two variations on the base phrase: same contour family, different scale-degree centers
+// and a couple of passing-tone/rhythmic tweaks, so the canon has fresh material to mirror.
+const MIRRORBIND_PHRASE_B = [2, 4, 6, 5, 7, 5, 4, 3];   // shifted up a third, same shape
+const MIRRORBIND_PHRASE_C = [0, 1, 4, 3, 4, 6, 5, 2];   // passing tone + varied turn
+const MIRRORBIND_PHRASES = [MIRRORBIND_PHRASE, MIRRORBIND_PHRASE_B, MIRRORBIND_PHRASE_C];
 const MIRRORBIND_ROOT = 220; // A3
 const MIRRORBIND_VOICE_GAP = 8;
 const MIRRORBIND_LOOP_STEPS = 32;
+const MIRRORBIND_CYCLE_LOOPS = 4; // loops of the canon before the phrase changes
 
 function mirrorbindDegreeFreq(degreeIdx, octaveShift = 0) {
   const len = MIRRORBIND_SCALE.length;
@@ -423,22 +429,32 @@ function mirrorbindDegreeFreq(degreeIdx, octaveShift = 0) {
 
 function mirrorbindMusic(step, atTime, gain) {
   const loopStep = step % MIRRORBIND_LOOP_STEPS;
+  const loopIdx = Math.floor(step / MIRRORBIND_LOOP_STEPS);
+  const cycleIdx = Math.floor(loopIdx / MIRRORBIND_CYCLE_LOOPS) % MIRRORBIND_PHRASES.length;
+  const phrase = MIRRORBIND_PHRASES[cycleIdx];
   const at = atTime - Sound.ctx.currentTime;
 
   // Voice A: the phrase, straight, mid register, triangle.
   const aIdx = loopStep;
-  if (aIdx < MIRRORBIND_PHRASE.length) {
-    const freq = mirrorbindDegreeFreq(MIRRORBIND_PHRASE[aIdx], 0);
+  if (aIdx < phrase.length) {
+    const freq = mirrorbindDegreeFreq(phrase[aIdx], 0);
     Sound.tone({ freq, dur: 0.42, type: 'triangle', gain: 0.05 * gain, at });
   }
 
   // Voice B: the same phrase mirrored (melodic inversion around its first note),
   // entering MIRRORBIND_VOICE_GAP steps later, one octave down, sine, quieter.
   const bIdx = loopStep - MIRRORBIND_VOICE_GAP;
-  if (bIdx >= 0 && bIdx < MIRRORBIND_PHRASE.length) {
-    const inverted = MIRRORBIND_PHRASE[0] - (MIRRORBIND_PHRASE[bIdx] - MIRRORBIND_PHRASE[0]);
+  if (bIdx >= 0 && bIdx < phrase.length) {
+    const inverted = phrase[0] - (phrase[bIdx] - phrase[0]);
     const freq = mirrorbindDegreeFreq(inverted, -1);
     Sound.tone({ freq, dur: 0.42, type: 'sine', gain: 0.035 * gain, at });
+  }
+
+  // Voice C: a very quiet sustained drone, low register, that only re-sounds
+  // when a new loop begins for the current phrase/cycle — a ground beneath the mirror.
+  if (loopStep === 0) {
+    const droneFreq = mirrorbindDegreeFreq(phrase[0], -2);
+    Sound.tone({ freq: droneFreq, dur: MIRRORBIND_LOOP_STEPS * (60 / 76 / 4), type: 'sine', gain: 0.02 * gain, at });
   }
 }
 

@@ -131,17 +131,31 @@ function pushTrail(sim) {
 // Sparse, wistful minor-key loop — each note echoes itself quietly ~0.3s later,
 // literalizing the ghost-replay theme in the music itself.
 const AFTERIMAGE_SCALE = [220.00, 246.94, 261.63, 293.66, 329.63, 349.23, 392.00]; // A minor (nat.)
+// Three sparse phrase variations, so the melody the echoes are chasing keeps
+// shifting slightly over a longer macro-cycle instead of looping forever.
+const AFTERIMAGE_PHRASES = [
+  { 0: 0, 6: 3, 12: 2, 20: 4, 28: 1, 36: 3, 44: 5, 52: 2, 58: 0 },
+  { 0: 2, 8: 4, 14: 1, 22: 5, 30: 3, 38: 0, 46: 4, 54: 1 },
+  { 0: 0, 4: 2, 16: 5, 24: 3, 32: 1, 40: 4, 48: 2, 56: 6 },
+];
+// Very quiet sustained low pad, shifts root occasionally, stays under the melody.
+const AFTERIMAGE_PAD_ROOTS = [110.00, 98.00, 130.81]; // A2, G2, C3
 function afterimageMusic(step, atTime, gain) {
   const bar = step % 64;
-  const notes = {
-    0: 0, 6: 3, 12: 2, 20: 4, 28: 1, 36: 3, 44: 5, 52: 2, 58: 0,
-  };
-  const idx = notes[bar];
-  if (idx === undefined) return;
-  const freq = AFTERIMAGE_SCALE[idx];
+  const cycle = Math.floor(step / 64);
+  const phrase = AFTERIMAGE_PHRASES[cycle % AFTERIMAGE_PHRASES.length];
   const t0 = atTime - Sound.ctx.currentTime;
-  Sound.tone({ freq, dur: 0.9, type: 'triangle', gain: 0.045 * gain, at: t0 });
-  Sound.tone({ freq, dur: 0.5, type: 'triangle', gain: 0.018 * gain, at: t0 + 0.3 });
+  const idx = phrase[bar];
+  if (idx !== undefined) {
+    const freq = AFTERIMAGE_SCALE[idx];
+    Sound.tone({ freq, dur: 0.9, type: 'triangle', gain: 0.045 * gain, at: t0 });
+    Sound.tone({ freq, dur: 0.5, type: 'triangle', gain: 0.018 * gain, at: t0 + 0.3 });
+  }
+  // quiet sustained low pad note, re-struck once per macro-cycle, root shifts slowly
+  if (bar === 0) {
+    const root = AFTERIMAGE_PAD_ROOTS[Math.floor(cycle / 2) % AFTERIMAGE_PAD_ROOTS.length];
+    Sound.tone({ freq: root, dur: 6.5, type: 'sine', gain: 0.02 * gain, at: t0, attack: 1.2 });
+  }
 }
 
 function update(s, dt, g) {

@@ -359,18 +359,29 @@ function rotatedCells(pattern, rot) {
 // breathes in, and sparse pseudo-random "bloop" tones + filtered noise swells
 // stand in for cells dividing/dying. 64-step cycle @ 60bpm/4 steps-per-beat
 // (0.25s/step) = 16s loop, gated by a step hash so it never feels metronomic.
+// slowly-drifting drone voicings: root freq + mid interval, one picked per macro-bar
+// (each bar is 64 steps @ 60bpm ≈ 64s, so the colony's tonal center shifts every 1-2min)
+const PETRI_VOICINGS = [
+  { root: 65, mid: 97.5 },   // C2 + perfect fifth
+  { root: 58.3, mid: 87.3 }, // Bb1 + fifth, a touch darker
+  { root: 73.4, mid: 110 },  // D2 + fifth, brighter drift
+  { root: 61.7, mid: 92.5 }, // B1-ish + fifth
+];
+
 function petriMusic(step, atTime, gain) {
   const at = atTime - Sound.ctx.currentTime;
   const s = step % 64;
+  const bar = Math.floor(step / 64);
+  const voicing = PETRI_VOICINGS[bar % PETRI_VOICINGS.length];
 
   // long sustained low drone, two barely-detuned layers, once every 4s
   if (s % 16 === 0) {
-    Sound.tone({ freq: 65, dur: 7.5, type: 'sine', gain: 0.035 * gain, at });
-    Sound.tone({ freq: 65.4, dur: 7.5, type: 'sine', gain: 0.02 * gain, at });
+    Sound.tone({ freq: voicing.root, dur: 7.5, type: 'sine', gain: 0.035 * gain, at });
+    Sound.tone({ freq: voicing.root * 1.006, dur: 7.5, type: 'sine', gain: 0.02 * gain, at });
   }
   // soft mid layer, offset from the low drone so it drifts in and out of phase
   if (s % 32 === 8) {
-    Sound.tone({ freq: 97.5, dur: 6, type: 'triangle', gain: 0.02 * gain, at });
+    Sound.tone({ freq: voicing.mid, dur: 6, type: 'triangle', gain: 0.02 * gain, at });
   }
 
   // sparse, seemingly-random cellular "bloops" and noise swells (deterministic
@@ -382,6 +393,18 @@ function petriMusic(step, atTime, gain) {
   }
   if (h % 13 === 0) {
     Sound.noise({ dur: 1.2, gain: 0.02 * gain, type: 'lowpass', freq: 300 + (h % 4) * 150, at });
+  }
+
+  // second bloop voice, different register, gated by a differently-mixed hash so it
+  // never lines up with the first voice's rhythm — two colonies breathing out of sync
+  const h2 = (s * 1597334677 + 0x9e3779b9) >>> 0;
+  if (h2 % 11 === 0) {
+    const freq2 = 440 + (h2 % 7) * 55;
+    Sound.tone({ freq: freq2, dur: 0.3 + (h2 % 4) * 0.15, type: 'triangle', gain: 0.025 * gain, at, attack: 0.05 });
+  }
+  // slow filtered-noise swell rising/falling over several seconds, very sparse
+  if (s === 48) {
+    Sound.noise({ dur: 5, gain: 0.02 * gain, type: 'lowpass', freq: 220 + (bar % 3) * 90, at });
   }
 }
 

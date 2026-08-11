@@ -24,23 +24,46 @@ import { isWord, WORD_COUNT } from './words.js';
 // ---------------------------------------------------------------- Background music
 // A jaunty 16-step square-wave melody with a light bass note on the downbeats —
 // cheerful and puzzle-friendly, kept well under SFX volume.
-const LEXICON_MELODY = [
+// Section A: the original jaunty call phrase. Section B: a contrasting response
+// phrase (higher, answers with a different contour) — the pattern alternates
+// A/A/B/A over a 4-bar macro-cycle so it isn't one loop forever.
+const LEXICON_MELODY_A = [
   523.25, 659.25, 783.99, 659.25,   // C5 E5 G5 E5
   587.33, 698.46, 880.00, 698.46,   // D5 F5 A5 F5
   523.25, 659.25, 987.77, 783.99,   // C5 E5 B5 G5
   587.33, 698.46, 659.25, 523.25,   // D5 F5 E5 C5
 ];
+const LEXICON_MELODY_B = [
+  783.99, 880.00, 987.77, 880.00,   // G5 A5 B5 A5
+  1046.50, 987.77, 880.00, 783.99,  // C6 B5 A5 G5
+  698.46, 783.99, 880.00, 987.77,   // F5 G5 A5 B5
+  880.00, 783.99, 698.46, 659.25,   // A5 G5 F5 E5
+];
 const LEXICON_BASS = [130.81, 146.83, 130.81, 146.83]; // C3 D3 C3 D3, one per 4-step bar
+// Light harmony note a third below the melody, only on strong beats of the B section.
+const LEXICON_HARMONY_DROP = 0.7937; // major third down (approx, in freq ratio)
 
 function lexiconMusic(step, atTime, gain) {
   const at = atTime - Sound.ctx.currentTime;
-  const note = LEXICON_MELODY[step % LEXICON_MELODY.length];
+  const stepsPerBar = 16;
+  const bar = Math.floor(step / stepsPerBar);
+  const cycle = bar % 4; // 0:A 1:A 2:B 3:A
+  const melody = cycle === 2 ? LEXICON_MELODY_B : LEXICON_MELODY_A;
+  const note = melody[step % melody.length];
   if (step % 2 === 0) {
     Sound.tone({ freq: note, dur: 0.16, type: 'square', gain: 0.045 * gain, at });
+    if (cycle === 2 && step % 4 === 0) {
+      // second layer: harmony note under the B-section melody
+      Sound.tone({ freq: note * LEXICON_HARMONY_DROP, dur: 0.16, type: 'triangle', gain: 0.022 * gain, at });
+    }
   }
   if (step % 4 === 0) {
     const bass = LEXICON_BASS[(step / 4) % LEXICON_BASS.length];
     Sound.tone({ freq: bass, dur: 0.3, type: 'square', gain: 0.035 * gain, at });
+  }
+  // light hi-hat/shaker texture on every off-beat 8th
+  if (step % 2 === 1) {
+    Sound.noise({ dur: 0.03, gain: 0.016 * gain, type: 'highpass', freq: 6000, at });
   }
 }
 
