@@ -322,7 +322,14 @@ class InputSystem {
       if (e.metaKey || e.ctrlKey) return;
       this.down.add(e.code);
       this.anyInputSeen = true;
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
+      // Backspace defaults to browser "navigate back" outside a text field in some
+      // browsers/embeds — Afterimage binds it to "restart level," and without this the
+      // key could trigger a REAL navigation attempt: pagehide fires (silencing audio
+      // for good, since nothing ever reconnects Sound.master), and a botched/cached
+      // resume of the page can leave rAF-driven sims in a corrupted state (a huge
+      // catch-up dt, or worse). Block the browser's own handling unconditionally so
+      // in-game Backspace only ever does what a game's own code does with it.
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Backspace'].includes(e.code)) e.preventDefault();
     });
     addEventListener('keyup', (e) => this.down.delete(e.code));
     addEventListener('blur', () => this.down.clear());
@@ -476,6 +483,16 @@ if (typeof globalThis.addEventListener === 'function') {
   globalThis.addEventListener('pagehide', () => {
     Music.stop();
     if (Sound.master) { try { Sound.master.disconnect(); } catch { /* already disconnected */ } }
+  });
+  // If a page that already disconnected its master gets restored from the browser's
+  // back/forward cache instead of a fresh reload (`pageshow` with `persisted: true`),
+  // Sound.ctx is still the same truthy object it always was, so Sound.init()'s
+  // `if (this.ctx) return` early-out means nothing would ever reconnect it — that page's
+  // audio would stay dead for the rest of its life. Reconnect defensively whenever we
+  // see this; connecting an already-connected node to the same destination is a no-op,
+  // so this is safe to run unconditionally rather than trying to track connection state.
+  globalThis.addEventListener('pageshow', () => {
+    if (Sound.ctx && Sound.master) { try { Sound.master.connect(Sound.ctx.destination); } catch { /* already connected */ } }
   });
 }
 
