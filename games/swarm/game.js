@@ -947,35 +947,78 @@ function handleTitleInput(state, game) {
   if (inp.justPressed('r')) { const l = game.store.get('up_hp', 0); if (buy('hp', upgradeCost(l))) game.store.set('up_hp', l + 1); }
 }
 
+// ---- kill / upgrade sound design ---------------------------------------------
+//
+// A short noise "crack" (the impact) layered under a quick tone "pop" (the pitch is
+// what actually reads as satisfying) — normal kills are cheap and small, elites and
+// the boss get a bigger, layered version. Everything is scheduled through the same
+// Sound engine every other game uses, at `at` offsets so a multi-kill frame (an AoE
+// wiping a pack) staggers into a little flourish instead of one clipped mush.
+function killPop(sound, rng, at, big) {
+  const freq = (big ? 180 : 340) + rng.next() * (big ? 90 : 160);
+  sound.noise({ dur: big ? 0.1 : 0.05, gain: (big ? 0.14 : 0.07), freq: big ? 900 : 1800, at });
+  sound.tone({ freq, dur: big ? 0.16 : 0.08, type: big ? 'sawtooth' : 'square', gain: big ? 0.13 : 0.08, slide: big ? -140 : -80, at });
+  if (big) sound.tone({ freq: freq * 0.5, dur: 0.22, type: 'sine', gain: 0.1, slide: -60, at: at + 0.02 });
+}
+
+// Weapon/passive level-ups get a short ascending two-note chime; an evolution — the
+// rarest, biggest moment in a run — gets a fuller ascending triad plus a sparkle on
+// top, clearly a different (bigger) reward than "you now have level 3 of a weapon."
+function upgradeChime(sound, kind) {
+  if (kind === 'evolution') {
+    const notes = [392, 494, 587, 784];
+    notes.forEach((f, i) => sound.tone({ freq: f, dur: 0.22, type: 'triangle', gain: 0.13, at: i * 0.05 }));
+    sound.tone({ freq: 1568, dur: 0.3, type: 'sine', gain: 0.06, at: 0.16 });
+    sound.noise({ dur: 0.25, gain: 0.05, type: 'highpass', freq: 4000, at: 0.15 });
+  } else {
+    const base = kind === 'passive' ? 440 : 523.3;
+    sound.tone({ freq: base, dur: 0.1, type: 'triangle', gain: 0.11, at: 0 });
+    sound.tone({ freq: base * 1.5, dur: 0.16, type: 'triangle', gain: 0.1, at: 0.06 });
+  }
+}
+
 function update(state, dt, game) {
   if (state.screen === 'title') { state.titleT += dt; handleTitleInput(state, game); return; }
   const sim = state.sim;
   if (!sim) return;
   const prevHp = sim.player.hp;
-  const prevKills = sim.kills;
   const prevPhase = sim.phase;
   const prevBoss = sim.bossSpawned;
   const intent = readIntent(game, state);
+  // Snapshot the card the player is about to lock in — stepSim clears sim.draft the
+  // instant it applies the pick, so this is the only chance to know which kind of
+  // reward just landed and pick the right chime for it.
+  const pickedCard = (sim.phase === 'draft' && intent.draftPick != null && sim.draft)
+    ? sim.draft.options[intent.draftPick] : null;
   stepSim(sim, intent, dt);
 
   // Kill sites the sim recorded this step become particle bursts. The sim never reads
   // them back, so this stays a one-way render feed and determinism is untouched.
+  let killSoundsThisFrame = 0;
   for (const k of sim.fxKills) {
     game.fx.burst(k.x, k.y, {
       count: k.big ? 26 : 6, color: Palette[k.c] || Palette.hot,
       speed: k.big ? 240 : 110, life: k.big ? 0.7 : 0.34, size: k.big ? 4 : 2.5, drag: 0.88,
     });
+    // Every big (elite/boss) kill gets its sound; ordinary kills are capped per frame
+    // so a screen-clearing nova reads as a satisfying flourish, not a wall of noise.
+    if (k.big || killSoundsThisFrame < 4) {
+      killPop(game.sound, game.rng, killSoundsThisFrame * 0.02, k.big);
+      killSoundsThisFrame++;
+    }
   }
   if (sim.player.hp < prevHp) {
     game.fx.shake(3);
     game.fx.burst(sim.player.x, sim.player.y, { count: 9, color: Palette.hot, speed: 150, life: 0.3, size: 3, drag: 0.88 });
   }
-  if (sim.kills > prevKills && game.rng.next() < 0.25) game.sound.blip(480 + game.rng.next() * 260);
   if (!prevBoss && sim.bossSpawned) { game.fx.shake(14); game.sound.bad(); }
 
   if (sim.phase === 'draft') state.draftT += dt; else state.draftT = 0;
   if (prevPhase !== 'draft' && sim.phase === 'draft') { game.sound.ok(); game.fx.shake(5); state.draftT = 0; }
-  if (prevPhase === 'draft' && sim.phase === 'playing') game.sound.blip(880);
+  if (prevPhase === 'draft' && sim.phase === 'playing') {
+    if (pickedCard) { upgradeChime(game.sound, pickedCard.kind); game.fx.shake(pickedCard.kind === 'evolution' ? 7 : 3); }
+    else game.sound.blip(880);
+  }
 
   if ((sim.phase === 'win' || sim.phase === 'lose') && !state.endStats) {
     state.endStats = { kills: sim.kills, level: sim.player.level, time: sim.elapsed, gold: sim.gold, won: sim.phase === 'win', stageNum: sim.stageNum };
