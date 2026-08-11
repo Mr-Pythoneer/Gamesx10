@@ -6,10 +6,10 @@
 // sim.rng (seeded RNG), all timing from the fixed dt the kit hands to update().
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store, RNG,
+  boot, registerSelftest, Palette, FX, Sound, Music, Store, RNG,
   clamp, lerp, dist, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
 } from '../../shared/kit.js';
 import {
   WEAPONS, WEAPON_IDS, PASSIVES, PASSIVE_IDS, EVOLUTIONS,
@@ -2026,6 +2026,40 @@ function render(state, ctx, game) {
 
 const game = boot({ id: 'swarm', title: 'Swarm', seed: 1, init, update, render });
 mountLangToggle();
+mountResetButton('swarm');
+
+// ---------------------------------------------------------------- background music
+// Driving 16-step loop: four-on-the-floor kick on 0/4/8/12, a low bass pulse on the
+// offbeat eighths, and a short aggressive square-wave riff riding on top. Loops as a
+// single tight bar so it never feels like it's "resetting" mid-run.
+const SWARM_RIFF = [220, 220, 262, 294, 330, 294, 262, 220]; // A3-ish arpeggio, 8 slots
+function swarmMusic(step, atTime, gain) {
+  const t = atTime - Sound.ctx.currentTime;
+  const s = step % 16;
+
+  // kick: punchy low thud on the quarter notes
+  if (s % 4 === 0) {
+    Sound.tone({ freq: 55, dur: 0.1, type: 'sine', gain: 0.08 * gain, at: t });
+    Sound.noise({ dur: 0.03, gain: 0.03 * gain, at: t });
+  }
+
+  // bass: root note on the "and" of each beat, driving the pulse forward
+  if (s % 4 === 2) {
+    Sound.tone({ freq: 110, dur: 0.14, type: 'square', gain: 0.06 * gain, at: t });
+  }
+
+  // riff: short aggressive arpeggio on every offbeat 8th step
+  if (s % 2 === 1) {
+    const note = SWARM_RIFF[(s >> 1) % SWARM_RIFF.length];
+    Sound.tone({ freq: note, dur: 0.09, type: 'sawtooth', gain: 0.035 * gain, at: t });
+  }
+
+  // hat: light tick on every step to keep the pulse tight
+  Sound.noise({ dur: 0.015, gain: 0.012 * gain, at: t });
+}
+const startSwarmMusic = () => { if (Sound.ctx && !Music.playing) Music.start(swarmMusic, { bpm: 128, gain: 1 }); };
+addEventListener('pointerdown', startSwarmMusic, { once: false });
+addEventListener('keydown', startSwarmMusic, { once: false });
 
 // ================================================================== SELF-TEST
 

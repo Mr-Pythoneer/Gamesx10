@@ -6,10 +6,10 @@
 // knows. Sim lives in ./sim.js and is pure — this file is input, audio and paint.
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store,
+  boot, registerSelftest, Palette, FX, Sound, Music, Store,
   clamp, lerp, text, allFinite, TAU, randomSeedString,
   Type, hudStrip, stat, meter, orb, vignette, titleCard,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, teleport,
@@ -131,6 +131,22 @@ registerTranslations({
     ko: '조각 4개를 찾아 출구로 가라. 이곳의 무언가는 소리로 사냥한다.',
   },
 });
+
+// ---------------------------------------------------------------- music
+//
+// Barely-there dread: mostly silence, a faint low drone every couple dozen
+// bars and an occasional dissonant second tone. Never compete with SFX.
+
+function blindsightMusic(step, atTime, gain) {
+  const at = atTime - Sound.ctx.currentTime;
+  if (step % 48 === 0) {
+    Sound.tone({ freq: 48, dur: 4.5, type: 'sine', gain: 0.02 * gain, at, attack: 1.2 });
+  }
+  if (step % 96 === 32) {
+    // faint dissonant second voice, rarer still
+    Sound.tone({ freq: 51, dur: 3.5, type: 'sine', gain: 0.012 * gain, at, attack: 1.0 });
+  }
+}
 
 // ---------------------------------------------------------------- palette
 
@@ -387,10 +403,12 @@ function update(s, dt, g) {
     if (I.justPressed('right') || I.justPressed('d')) s.stageIndex = clamp(s.stageIndex + 1, 0, s.maxStage);
     if (I.justPressed('space') || I.justPressed('enter') || I.pointerPressed) {
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(blindsightMusic, { bpm: 50, gain: 1 });
       startStage(s, g, s.stageIndex);
     }
     if (I.justPressed('f')) {
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(blindsightMusic, { bpm: 50, gain: 1 });
       s.mode = 'free';
       s.phase = 'intro';
     }
@@ -400,6 +418,7 @@ function update(s, dt, g) {
   if (s.phase === 'intro') {
     if (g.input.justPressed('space') || g.input.justPressed('enter') || g.input.pointerPressed) {
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(blindsightMusic, { bpm: 50, gain: 1 });
       resetRun(s, g, s.seedStr);
     }
     if (g.input.justPressed('n')) { s.seedStr = randomSeedString(6); s.sim = makeSim(s.seedStr); }
@@ -954,6 +973,7 @@ const game = boot({
   init, update, render,
 });
 mountLangToggle();
+mountResetButton('blindsight');
 
 // ---------------------------------------------------------------- self-test
 

@@ -12,10 +12,34 @@
 //   action here (assign / confirm / lock) is a plain function the self-test drives directly.
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store,
+  boot, registerSelftest, Palette, FX, Sound, Music, Store,
   RNG, randomSeedString, clamp, text, roundRect, allFinite, TAU,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
 } from '../../shared/kit.js';
+
+// ---------------------------------------------------------------- background music (noir walking bass)
+// D dorian-ish minor walking bassline, low register, one note per beat (quarter notes at
+// stepsPerBeat=4, so beats land on step % 4 === 0). Sparse brushed-noise on off-beats and an
+// occasional muted comping chord stab every 16 steps for a smoky detective-office feel.
+const THE_NINE_BASS = [73.4, 82.4, 87.3, 98.0, 87.3, 82.4, 73.4, 65.4]; // D2 E2 F2 G2 F2 E2 D2 C2
+function theNineMusic(step, atTime, gain) {
+  const t = atTime - Sound.ctx.currentTime;
+  const beat = Math.floor(step / 4);
+  if (step % 4 === 0) {
+    // walking bass, quarter notes
+    const freq = THE_NINE_BASS[beat % THE_NINE_BASS.length];
+    Sound.tone({ freq, dur: 0.34, type: 'triangle', gain: 0.055 * gain, at: t });
+  } else if (step % 4 === 2) {
+    // brushed percussion texture on the off-beat
+    Sound.noise({ dur: 0.045, gain: 0.014 * gain, type: 'highpass', freq: 3200, at: t });
+  }
+  if (step % 16 === 8) {
+    // sparse muted comping chord stab (minor third dyad)
+    const root = THE_NINE_BASS[beat % THE_NINE_BASS.length] * 2;
+    Sound.tone({ freq: root, dur: 0.12, type: 'sine', gain: 0.03 * gain, at: t });
+    Sound.tone({ freq: root * 1.189, dur: 0.12, type: 'sine', gain: 0.025 * gain, at: t });
+  }
+}
 
 // ---------------------------------------------------------------- ES/FR/JA/KO registry
 // Every English string used as T()'s first argument anywhere in this file (including via
@@ -554,6 +578,7 @@ function update(s, dt, g) {
       s.phase = 'play';
       Sound.init(); Sound.resume();
       Sound.blip(520);
+      if (!Music.playing) Music.start(theNineMusic, { bpm: 84, gain: 1 });
     }
     return;
   }
@@ -1333,6 +1358,7 @@ function drawSolved(s, ctx, g, L) {
 
 const game = boot({ id: 'the-nine', title: 'The Nine', seed: 1, init, update, render });
 mountLangToggle();
+mountResetButton('the-nine');
 
 // Progressive enhancement: wheel scrolling for the clue list. Never traps browser zoom.
 if (game.canvas && game.canvas.addEventListener) {

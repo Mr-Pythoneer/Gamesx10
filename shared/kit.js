@@ -122,6 +122,49 @@ export function mountLangToggle() {
   onLangChange(applyDom);
 }
 
+const RESET_LABEL = { en: 'reset', zh: '重置', es: 'reiniciar', fr: 'réinitialiser', ja: 'リセット', ko: '초기화' };
+const RESET_CONFIRM = {
+  en: 'Reset all progress for this game? This cannot be undone.',
+  zh: '重置本游戏的全部进度？此操作无法撤销。',
+  es: '¿Reiniciar todo el progreso de este juego? Esto no se puede deshacer.',
+  fr: 'Réinitialiser toute la progression de ce jeu ? Action irréversible.',
+  ja: 'このゲームの進行状況をすべてリセットしますか？元に戻せません。',
+  ko: '이 게임의 모든 진행 상황을 초기화할까요? 되돌릴 수 없습니다.',
+};
+
+/**
+ * Mounts a "reset" button into `.topbar` (idempotent) that clears every localStorage key
+ * under this game's `gx10:<id>:` namespace and reloads the page. Confirms first — this is
+ * destructive and unrecoverable, unlike everything else in the topbar.
+ */
+export function mountResetButton(id) {
+  if (typeof document === 'undefined' || document.getElementById('gx10ResetBtn')) return;
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'gx10ResetBtn';
+  btn.type = 'button';
+  btn.className = 'lang-btn-inline reset-btn-inline';
+  btn.setAttribute('aria-label', 'reset progress');
+  const applyLabel = () => { btn.textContent = RESET_LABEL[_lang] || RESET_LABEL.en; };
+  btn.addEventListener('click', () => {
+    if (!globalThis.confirm(RESET_CONFIRM[_lang] || RESET_CONFIRM.en)) return;
+    const prefix = 'gx10:' + id + ':';
+    const dead = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) dead.push(k);
+    }
+    for (const k of dead) localStorage.removeItem(k);
+    globalThis.location.reload();
+  });
+  topbar.appendChild(btn);
+
+  applyLabel();
+  onLangChange(applyLabel);
+}
+
 export const Palette = {
   bg: '#07080d',
   bg2: '#0d1018',
@@ -369,6 +412,53 @@ export const Sound = {
   ok() { this.tone({ freq: 520, dur: 0.09, type: 'triangle', gain: 0.12 }); this.tone({ freq: 780, dur: 0.12, type: 'triangle', gain: 0.09, at: 0.07 }); },
   bad() { this.tone({ freq: 200, dur: 0.22, type: 'sawtooth', gain: 0.12, slide: -120 }); },
   thud() { this.noise({ dur: 0.12, gain: 0.14, freq: 500 }); },
+};
+
+// ---------------------------------------------------------------- Music (lookahead-scheduled BGM)
+//
+// A generic step sequencer built on Sound.tone/noise, so every game's background loop
+// shares the same scheduling discipline instead of reinventing setInterval-per-note
+// (which drifts and glitches under frame hitches). `pattern(step, atTime, gain)` is
+// called slightly ahead of when each step should actually play; it schedules its own
+// notes via Sound.tone/noise with `at: atTime - Sound.ctx.currentTime`. Runs through
+// the same `Sound.master` gain node, so the existing mute toggle silences music too.
+export const Music = {
+  _timer: null,
+  playing: false,
+  _step: 0,
+  _next: 0,
+  _stepDur: 0.15,
+  _pattern: null,
+  _gain: 1,
+  _lookahead: 25,   // ms between scheduler wake-ups
+  _horizon: 0.12,   // seconds of lookahead scheduled per wake-up
+
+  /** pattern(step, atTime, gain) — called once per step, must be pure scheduling (no game-state writes). */
+  start(pattern, { bpm = 100, stepsPerBeat = 4, gain = 1 } = {}) {
+    if (!Sound.ctx) return;
+    this.stop();
+    this._pattern = pattern;
+    this._stepDur = 60 / bpm / stepsPerBeat;
+    this._step = 0;
+    this._next = Sound.ctx.currentTime + 0.05;
+    this._gain = gain;
+    this.playing = true;
+    const tick = () => {
+      if (!this.playing || !Sound.ctx) return;
+      while (this._next < Sound.ctx.currentTime + this._horizon) {
+        try { this._pattern(this._step, this._next, this._gain); } catch { /* a bad pattern must not kill the scheduler */ }
+        this._next += this._stepDur;
+        this._step++;
+      }
+      this._timer = setTimeout(tick, this._lookahead);
+    };
+    tick();
+  },
+  stop() {
+    this.playing = false;
+    if (this._timer) clearTimeout(this._timer);
+    this._timer = null;
+  },
 };
 
 // ---------------------------------------------------------------- Store (namespaced localStorage)

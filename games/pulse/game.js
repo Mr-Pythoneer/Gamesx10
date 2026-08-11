@@ -19,7 +19,7 @@ import {
   boot, registerSelftest, Palette, FX, Sound, Store,
   clamp, text, roundRect, allFinite, randomSeedString, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
 } from '../../shared/kit.js';
 import { compose, verifyChart, PHYS } from './compose.js';
 import { makeSim, stepSim, autoRun, idleRun, playerHeight } from './sim.js';
@@ -1135,6 +1135,7 @@ function render(s, ctx, g) {
 
 const game = boot({ id: 'pulse', title: 'Pulse', seed: START_SEED, init, update, render });
 mountLangToggle();
+mountResetButton('pulse');
 
 // paste a seed straight into the seed prompt
 addEventListener('paste', (e) => {

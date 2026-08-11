@@ -13,10 +13,10 @@
 // test proves is true of the game you actually play.
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store,
+  boot, registerSelftest, Palette, FX, Sound, Music, Store,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 import {
@@ -218,6 +218,22 @@ function say(s, en, zh) { s.msgEn = en; s.msgZh = zh || en; s.msgT = 1.6; }
 
 // ---------------------------------------------------------------- update
 
+// Bouncy pizzicato toybox melody: major scale, plucky triangle notes, skips
+// steps so it feels light rather than dense. Light bass pluck on downbeats.
+const SCRIBBLE_SCALE = [523.3, 587.3, 659.3, 784.0, 880.0, 1046.5, 880.0, 659.3]; // C D E G A C A E (major, playful)
+const SCRIBBLE_MELODY_STEPS = [0, 3, 5, 7, 10, 13, 16, 19, 22, 25, 27, 29]; // sparse, skippy within a 32-step loop
+function scribbleMusic(step, atTime, gain) {
+  const s32 = step % 32;
+  const at = atTime - Sound.ctx.currentTime;
+  if (SCRIBBLE_MELODY_STEPS.includes(s32)) {
+    const idx = SCRIBBLE_MELODY_STEPS.indexOf(s32) % SCRIBBLE_SCALE.length;
+    Sound.tone({ freq: SCRIBBLE_SCALE[idx], dur: 0.11, type: 'triangle', gain: 0.05 * gain, at });
+  }
+  if (s32 % 8 === 0) {
+    Sound.tone({ freq: SCRIBBLE_SCALE[0] / 2, dur: 0.14, type: 'triangle', gain: 0.035 * gain, at });
+  }
+}
+
 function update(s, dt, g) {
   const I = g.input;
   s.flash = Math.max(0, s.flash - dt * 2.6);
@@ -229,6 +245,7 @@ function update(s, dt, g) {
       s.phase = 'play';
       s.hintT = 3.4;
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(scribbleMusic, { bpm: 108, gain: 1 });
     }
     return;
   }
@@ -1065,6 +1082,7 @@ function render(s, ctx, g) {
 
 const game = boot({ id: 'scribble', title: 'Scribble', seed: 1, init, update, render });
 mountLangToggle();
+mountResetButton('scribble');
 
 // ---------------------------------------------------------------- self-test
 

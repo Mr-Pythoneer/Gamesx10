@@ -6,7 +6,8 @@
 import {
   boot, RNG, Palette, clamp, text, roundRect, allFinite, registerSelftest,
   Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
+  Sound, Music,
 } from '../../shared/kit.js';
 import { PATTERNS, patternById, rotatePattern, patternBounds, stampPattern } from './patterns.js';
 
@@ -352,6 +353,38 @@ function rotatedCells(pattern, rot) {
   return cells;
 }
 
+// ---------------------------------------------------------------- ambient music
+// Organic, slowly-morphing drone that fits a living cellular-automata colony:
+// two detuned low sine layers sustain underneath, a mid triangle occasionally
+// breathes in, and sparse pseudo-random "bloop" tones + filtered noise swells
+// stand in for cells dividing/dying. 64-step cycle @ 60bpm/4 steps-per-beat
+// (0.25s/step) = 16s loop, gated by a step hash so it never feels metronomic.
+function petriMusic(step, atTime, gain) {
+  const at = atTime - Sound.ctx.currentTime;
+  const s = step % 64;
+
+  // long sustained low drone, two barely-detuned layers, once every 4s
+  if (s % 16 === 0) {
+    Sound.tone({ freq: 65, dur: 7.5, type: 'sine', gain: 0.035 * gain, at });
+    Sound.tone({ freq: 65.4, dur: 7.5, type: 'sine', gain: 0.02 * gain, at });
+  }
+  // soft mid layer, offset from the low drone so it drifts in and out of phase
+  if (s % 32 === 8) {
+    Sound.tone({ freq: 97.5, dur: 6, type: 'triangle', gain: 0.02 * gain, at });
+  }
+
+  // sparse, seemingly-random cellular "bloops" and noise swells (deterministic
+  // hash of the step, not Math.random, but reads as unpredictable)
+  const h = (s * 2654435761) >>> 0;
+  if (h % 9 === 0) {
+    const freq = 220 + (h % 5) * 40;
+    Sound.tone({ freq, dur: 0.5 + (h % 3) * 0.2, type: 'sine', gain: 0.03 * gain, at, attack: 0.08 });
+  }
+  if (h % 13 === 0) {
+    Sound.noise({ dur: 1.2, gain: 0.02 * gain, type: 'lowpass', freq: 300 + (h % 4) * 150, at });
+  }
+}
+
 function init(game) {
   const level = Number(game.store.get('level', 0)) || 0;
   return {
@@ -392,7 +425,13 @@ function selectPatternFromInput(state, game) {
 
 function update(state, dt, game) {
   if (!state.introDone) {
-    if (game.input.justPressed('space') || game.input.pointerPressed) state.introDone = true;
+    if (game.input.justPressed('space') || game.input.pointerPressed) {
+      state.introDone = true;
+      // First real user gesture — safe point to start audio (same constraint as Sound).
+      Sound.init();
+      Sound.resume();
+      if (!Music.playing) Music.start(petriMusic, { bpm: 60, gain: 1 });
+    }
     return;
   }
 
@@ -881,6 +920,7 @@ const game = boot({
   init, update, render,
 });
 mountLangToggle();
+mountResetButton('petri');
 
 globalThis.__petri = { makeSim, stepSim, stepCA, countColors, PATTERNS, patternById, rotatePattern, stampPattern, LEVELS };
 

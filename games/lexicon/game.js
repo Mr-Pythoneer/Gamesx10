@@ -9,10 +9,10 @@
 // makes noise. window.__selftest() drives the exact same stepSim().
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store,
+  boot, registerSelftest, Palette, FX, Sound, Music, Store,
   clamp, approach, text, roundRect, allFinite, TAU, randomSeedString,
   Type, HUD_H, hudStrip, stat, panel, meter, vignette, titleCard,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
 } from '../../shared/kit.js';
 import {
   makeSim, stepSim, addTile, findWord, settle, tileById, totalKE, maxOverlap, outOfBounds,
@@ -20,6 +20,29 @@ import {
   WORLD_W, WORLD_H, TILE_R, DANGER_Y, MIN_WORD, CHAIN_WINDOW, MAX_TILES,
 } from './sim.js';
 import { isWord, WORD_COUNT } from './words.js';
+
+// ---------------------------------------------------------------- Background music
+// A jaunty 16-step square-wave melody with a light bass note on the downbeats —
+// cheerful and puzzle-friendly, kept well under SFX volume.
+const LEXICON_MELODY = [
+  523.25, 659.25, 783.99, 659.25,   // C5 E5 G5 E5
+  587.33, 698.46, 880.00, 698.46,   // D5 F5 A5 F5
+  523.25, 659.25, 987.77, 783.99,   // C5 E5 B5 G5
+  587.33, 698.46, 659.25, 523.25,   // D5 F5 E5 C5
+];
+const LEXICON_BASS = [130.81, 146.83, 130.81, 146.83]; // C3 D3 C3 D3, one per 4-step bar
+
+function lexiconMusic(step, atTime, gain) {
+  const at = atTime - Sound.ctx.currentTime;
+  const note = LEXICON_MELODY[step % LEXICON_MELODY.length];
+  if (step % 2 === 0) {
+    Sound.tone({ freq: note, dur: 0.16, type: 'square', gain: 0.045 * gain, at });
+  }
+  if (step % 4 === 0) {
+    const bass = LEXICON_BASS[(step / 4) % LEXICON_BASS.length];
+    Sound.tone({ freq: bass, dur: 0.3, type: 'square', gain: 0.035 * gain, at });
+  }
+}
 
 // es/fr/ja/ko for every English string passed as T()'s first argument.
 // STAGE_COUNT_FOR_I18N mirrors STAGE_COUNT below (50) — kept local so this
@@ -425,6 +448,7 @@ function update(s, dt, g) {
     if (I.justPressed('c')) {
       s.phase = 'select';
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(lexiconMusic, { bpm: 118, gain: 1 });
       return;
     }
     if (I.pointerPressed || I.justPressed('space') || I.justPressed('enter')) {
@@ -434,6 +458,7 @@ function update(s, dt, g) {
       s.sim.t = 0;          // difficulty ramp starts when the player does
       s.sim.idleT = 0;
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(lexiconMusic, { bpm: 118, gain: 1 });
     }
     return;
   }
@@ -1288,6 +1313,7 @@ const game = boot({
   init, update, render,
 });
 mountLangToggle();
+mountResetButton('lexicon');
 
 // ---------------------------------------------------------------- self-test
 

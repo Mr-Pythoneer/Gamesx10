@@ -70,9 +70,13 @@ const PLAYER_W_T = 0.07; // player box width, in seconds of travel
 
 // Obstacle widths in seconds — these ALREADY include the player's own width,
 // so a hit is simply |simTime - obstacle.t| < w/2.
-const W_SPIKE = 0.16;
-const W_PIT = 0.34;
-const W_CEIL = 0.30;
+// Narrower than the visual obstacle footprint on purpose — the actual hitbox is
+// what determines the physics coverage window (`a.tol` below), and jump timing
+// was reported too punishing, so these were shrunk to give a much wider margin
+// for an early/late press to still clear safely.
+const W_SPIKE = 0.10;
+const W_PIT = 0.22;
+const W_CEIL = 0.18;
 
 const SPIKE_RISE = tRise(SPIKE_H);                 // 0.0850
 const PIT_RISE = tRise(2);                         // ~0.0036 (feet just off the floor)
@@ -95,8 +99,8 @@ for (const k of Object.keys(ACTIONS)) {
 /** Recovery gap the chart builder leaves after an action before the next cue. */
 const MARGIN = 0.1;
 /** Judgement windows, in seconds off the cue. */
-const PERFECT_W = 0.075;
-const GOOD_W = 0.16;
+const PERFECT_W = 0.10;
+const GOOD_W = 0.20;
 
 export const PHYS = {
   G, JUMP_V, DIVE_V, SLIDE_T, T_JUMP, APEX, DIVE_DELAY,

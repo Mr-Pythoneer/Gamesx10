@@ -7,10 +7,10 @@
 //   3. registerSelftest() proving init / input response / progress / win / lose / no-NaN.
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store,
+  boot, registerSelftest, Palette, FX, Sound, Store, Music,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle, currentLang, registerTranslations,
+  T, mountLangToggle, mountResetButton, currentLang, registerTranslations,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 
@@ -403,6 +403,45 @@ function loadLevel(s, idx) {
   s.hintT = 2.6;
 }
 
+// A minor-key phrase (scale-degree offsets in an A natural-minor scale) played as a
+// canon: voice A starts at step 0, voice B enters 8 steps later playing the melodic
+// inversion an octave lower — two mirrored voices chasing each other, echoing the
+// game's one-input-controls-two-mirrored-characters premise.
+const MIRRORBIND_SCALE = [0, 2, 3, 5, 7, 8, 10, 12]; // A natural minor degrees -> semitones
+const MIRRORBIND_PHRASE = [0, 2, 4, 3, 5, 4, 2, 1];  // scale-degree indices into MIRRORBIND_SCALE
+const MIRRORBIND_ROOT = 220; // A3
+const MIRRORBIND_VOICE_GAP = 8;
+const MIRRORBIND_LOOP_STEPS = 32;
+
+function mirrorbindDegreeFreq(degreeIdx, octaveShift = 0) {
+  const len = MIRRORBIND_SCALE.length;
+  const wrapped = ((degreeIdx % len) + len) % len;
+  const octave = octaveShift + Math.floor(degreeIdx / len);
+  const semitones = MIRRORBIND_SCALE[wrapped] + octave * 12;
+  return MIRRORBIND_ROOT * Math.pow(2, semitones / 12);
+}
+
+function mirrorbindMusic(step, atTime, gain) {
+  const loopStep = step % MIRRORBIND_LOOP_STEPS;
+  const at = atTime - Sound.ctx.currentTime;
+
+  // Voice A: the phrase, straight, mid register, triangle.
+  const aIdx = loopStep;
+  if (aIdx < MIRRORBIND_PHRASE.length) {
+    const freq = mirrorbindDegreeFreq(MIRRORBIND_PHRASE[aIdx], 0);
+    Sound.tone({ freq, dur: 0.42, type: 'triangle', gain: 0.05 * gain, at });
+  }
+
+  // Voice B: the same phrase mirrored (melodic inversion around its first note),
+  // entering MIRRORBIND_VOICE_GAP steps later, one octave down, sine, quieter.
+  const bIdx = loopStep - MIRRORBIND_VOICE_GAP;
+  if (bIdx >= 0 && bIdx < MIRRORBIND_PHRASE.length) {
+    const inverted = MIRRORBIND_PHRASE[0] - (MIRRORBIND_PHRASE[bIdx] - MIRRORBIND_PHRASE[0]);
+    const freq = mirrorbindDegreeFreq(inverted, -1);
+    Sound.tone({ freq, dur: 0.42, type: 'sine', gain: 0.035 * gain, at });
+  }
+}
+
 function currentMask(g) {
   const I = g.input;
   let m = 0;
@@ -421,6 +460,7 @@ function update(s, dt, g) {
       s.phase = 'play';
       s.hintT = 2.6;
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(mirrorbindMusic, { bpm: 76, gain: 1 });
     }
     return;
   }
@@ -1017,6 +1057,7 @@ function render(s, ctx, g) {
 
 const game = boot({ id: 'mirrorbind', title: 'Mirrorbind', seed: 1, init, update, render });
 mountLangToggle();
+mountResetButton('mirrorbind');
 
 registerSelftest('mirrorbind', (check, log) => {
   const dt = 1 / 60;

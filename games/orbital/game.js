@@ -8,10 +8,10 @@
 // flight in your browser is bit-for-bit the flight the solver verified.
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store, RNG,
+  boot, registerSelftest, Palette, FX, Sound, Music, Store, RNG,
   clamp, approach, text, allFinite, TAU,
   Type, HUD_H, withGlow, stat, hudStrip, panel, meter, orb, vignette, titleCard,
-  T, mountLangToggle, currentLang, registerTranslations,
+  T, mountLangToggle, mountResetButton, currentLang, registerTranslations,
 } from '../../shared/kit.js';
 
 import {
@@ -21,6 +21,29 @@ import {
 } from './sim.js';
 
 import { HOLES, TOTAL_PAR } from './holes.js';
+
+// --- ambient background music: slow D-dorian pad with a sparse, distant arpeggio.
+// Kept quiet and spacious to sit under the physics puzzle without distracting from it.
+const ORBITAL_PAD = [73.42, 87.31, 98.00, 110.00];        // D2 F2 G2 A2 — dorian drone/pad tones
+const ORBITAL_TWINKLE = [587.33, 698.46, 783.99, 880.00, 1046.50]; // D5 F5 G5 A5 C6 — distant twinkles
+function orbitalMusic(step, atTime, gain) {
+  const t = atTime - Sound.ctx.currentTime;
+  const bar = Math.floor(step / 16) % 4;
+  // slow pad, one long note every 4 beats (16 steps), cycling through the chord
+  if (step % 16 === 0) {
+    Sound.tone({ freq: ORBITAL_PAD[bar % ORBITAL_PAD.length], dur: 3.4, type: 'sine', gain: 0.045 * gain, at: t });
+    Sound.tone({ freq: ORBITAL_PAD[bar % ORBITAL_PAD.length] * 1.5, dur: 3.0, type: 'sine', gain: 0.02 * gain, at: t });
+  }
+  // occasional distant twinkle, sparse and irregular-feeling
+  if (step % 24 === 6) {
+    const n = ORBITAL_TWINKLE[(step / 24 | 0) % ORBITAL_TWINKLE.length];
+    Sound.tone({ freq: n, dur: 0.9, type: 'triangle', gain: 0.03 * gain, at: t });
+  }
+  if (step % 40 === 30) {
+    const n = ORBITAL_TWINKLE[((step / 40 | 0) + 2) % ORBITAL_TWINKLE.length];
+    Sound.tone({ freq: n * 2, dur: 0.6, type: 'sine', gain: 0.02 * gain, at: t });
+  }
+}
 
 registerTranslations({
   'HOLE RESET': { es: 'HOYO REINICIADO', fr: 'TROU RÉINITIALISÉ', ja: 'ホールをリセット', ko: '홀 리셋' },
@@ -344,6 +367,7 @@ function update(s, dt, g) {
       s.phase = 'aim';
       s.hintT = 4.2;
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(orbitalMusic, { bpm: 70, gain: 1 });
     }
     const t = camTarget(s, g);
     s.cam.scale = approach(s.cam.scale, t.scale, 0.05, dt);
@@ -1153,6 +1177,7 @@ function render(s, ctx, g) {
 
 const game = boot({ id: 'orbital', title: 'Orbital', seed: 1, init, update, render });
 mountLangToggle();
+mountResetButton('orbital');
 
 // ---------------------------------------------------------------- self-test
 

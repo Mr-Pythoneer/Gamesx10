@@ -120,6 +120,7 @@ a:hover { text-decoration: underline; }
   transition: color 0.15s, border-color 0.15s;
 }
 .lang-btn-inline:hover { color: var(--accent); border-color: var(--accent); }
+.reset-btn-inline:hover { color: var(--hot, #ff4d6d); border-color: var(--hot, #ff4d6d); }
 html[lang="zh"] .topbar .tag,
 html[lang="zh"] .card p,
 html[lang="zh"] .card h2 {

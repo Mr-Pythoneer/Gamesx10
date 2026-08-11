@@ -8,10 +8,10 @@
 // the self-test call the exact same stepSim, so physics can never drift apart.
 
 import {
-  boot, registerSelftest, Palette, FX, Sound, Store,
+  boot, registerSelftest, Palette, FX, Sound, Store, Music,
   clamp, text, roundRect, allFinite, TAU,
   Type, HUD_H, hudStrip, stat, panel, meter, orb, vignette, titleCard, withGlow,
-  T, mountLangToggle, registerTranslations,
+  T, mountLangToggle, mountResetButton, registerTranslations,
 } from '../../shared/kit.js';
 import { LEVELS } from './levels.js';
 
@@ -128,6 +128,22 @@ function pushTrail(sim) {
   }
 }
 
+// Sparse, wistful minor-key loop — each note echoes itself quietly ~0.3s later,
+// literalizing the ghost-replay theme in the music itself.
+const AFTERIMAGE_SCALE = [220.00, 246.94, 261.63, 293.66, 329.63, 349.23, 392.00]; // A minor (nat.)
+function afterimageMusic(step, atTime, gain) {
+  const bar = step % 64;
+  const notes = {
+    0: 0, 6: 3, 12: 2, 20: 4, 28: 1, 36: 3, 44: 5, 52: 2, 58: 0,
+  };
+  const idx = notes[bar];
+  if (idx === undefined) return;
+  const freq = AFTERIMAGE_SCALE[idx];
+  const t0 = atTime - Sound.ctx.currentTime;
+  Sound.tone({ freq, dur: 0.9, type: 'triangle', gain: 0.045 * gain, at: t0 });
+  Sound.tone({ freq, dur: 0.5, type: 'triangle', gain: 0.018 * gain, at: t0 + 0.3 });
+}
+
 function update(s, dt, g) {
   s.flash = Math.max(0, s.flash - dt * 3);
   if (s.hintT > 0) s.hintT -= dt;
@@ -137,6 +153,7 @@ function update(s, dt, g) {
       s.phase = 'play';
       s.hintT = 3.0;
       Sound.init(); Sound.resume();
+      if (!Music.playing) Music.start(afterimageMusic, { bpm: 66, gain: 1 });
     }
     return;
   }
@@ -792,6 +809,7 @@ function render(s, ctx, g) {
 
 const game = boot({ id: 'afterimage', title: 'Afterimage', seed: 1, init, update, render });
 mountLangToggle();
+mountResetButton('afterimage');
 
 registerSelftest('afterimage', (check, log) => {
   const dt = 1 / 60;
