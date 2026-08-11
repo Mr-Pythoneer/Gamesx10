@@ -22,11 +22,11 @@ registerTranslations({
   'BEST': { es: 'MEJOR', fr: 'MEILLEUR', ja: 'ベスト', ko: '최고' },
   'GHOST PAR': { es: 'PAR FANTASMA', fr: 'PAR FANTÔME', ja: '幻影パー', ko: '환영 파' },
   'HINT': { es: 'PISTA', fr: 'INDICE', ja: 'ヒント', ko: '힌트' },
-  '← →  MOVE     SPACE  JUMP     R  RETRY': {
-    es: '← →  MOVER     ESPACIO  SALTAR     R  REINTENTAR',
-    fr: '← →  DÉPLACER     ESPACE  SAUTER     R  RÉESSAYER',
-    ja: '← →  移動     SPACE  ジャンプ     R  リトライ',
-    ko: '← →  이동     SPACE  점프     R  재시도',
+  '← →  MOVE     SPACE  JUMP     R  RETRY     ⌫  RESTART': {
+    es: '← →  MOVER     ESPACIO  SALTAR     R  REINTENTAR     ⌫  REINICIAR',
+    fr: '← →  DÉPLACER     ESPACE  SAUTER     R  RÉESSAYER     ⌫  REDÉMARRER',
+    ja: '← →  移動     SPACE  ジャンプ     R  リトライ     ⌫  再開',
+    ko: '← →  이동     SPACE  점프     R  재시도     ⌫  재시작',
   },
   'NEW BEST': { es: 'NUEVO RÉCORD', fr: 'NOUVEAU RECORD', ja: '自己ベスト更新', ko: '신기록' },
   'AFTERIMAGE': { es: 'REMANENCIA', fr: 'RÉMANENCE', ja: '残像', ko: '잔상' },
@@ -204,6 +204,23 @@ function update(s, dt, g) {
   }
 
   // --- playing
+  // 'R' banks the current run as a ghost before respawning — that's the whole point of
+  // the mechanic. But it means an errant run (e.g. overshooting a plate and walking a
+  // ghost-to-be straight through a door) gets permanently baked into the ghost history,
+  // and since ghosts always ignore doors (see sim.js), that ghost then sits stranded on
+  // whichever side it wandered to, doing nothing useful — with no way to undo it short
+  // of grinding through GHOST_CAP more retries to age it out of the FIFO. Backspace is a
+  // separate "restart level" that clears every ghost and starts the level clean, so one
+  // bad run doesn't lock the puzzle out of its own solution.
+  if (g.input.justPressed('backspace')) {
+    s.runDeaths++;
+    s.totalDeaths++;
+    Store.set('deaths', s.totalDeaths);
+    loadLevel(s, s.levelIndex);
+    Sound.bad();
+    return;
+  }
+
   if (g.input.justPressed('r')) {
     s.runDeaths++;
     s.totalDeaths++;
@@ -514,7 +531,7 @@ function drawHintBar(s, ctx, g, lay, compact) {
     const labW = measureWith(ctx, hintLabel, `600 ${Type.label}px ${MONO}`) + hintLabel.length * Type.label * 0.14;
     tx += labW + 14;
 
-    const keys = T('← →  MOVE     SPACE  JUMP     R  RETRY', '← →  移动     SPACE  跳跃     R  重试');
+    const keys = T('← →  MOVE     SPACE  JUMP     R  RETRY     ⌫  RESTART', '← →  移动     SPACE  跳跃     R  重试     ⌫  重开');
     const keysW = measureWith(ctx, keys, `500 ${Type.label}px ${MONO}`);
     text(ctx, keys, barX + barW - 14, barY + barH / 2 + 4, {
       size: Type.label, color: DIM_70, align: 'right', baseline: 'alphabetic', weight: 500,
@@ -798,7 +815,7 @@ function render(s, ctx, g) {
         T('Park a ghost on a plate to hold a door open.', '把幻影停在压力板上,门就会一直开着。'),
         T("Climb a ghost's head to reach higher ledges.", '踩着幻影的头,爬上更高的台子。'),
         '',
-        T('← →  MOVE     SPACE  JUMP     R  RETRY', '← →  移动     SPACE  跳跃     R  重试'),
+        T('← →  MOVE     SPACE  JUMP     R  RETRY     ⌫  RESTART', '← →  移动     SPACE  跳跃     R  重试     ⌫  重开'),
       ],
       prompt: T('PRESS SPACE', '按空格键开始'),
       t, accent: Palette.accent,
