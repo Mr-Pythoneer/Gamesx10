@@ -263,7 +263,12 @@ function init(g) {
     _wrapKey: '', _wrap: null, _wrapSpace: 8, _boxes: null,
   };
   const tier = clamp(Store.get('tier', 1), 0, TIERS.length - 1);
-  newPuzzle(s, g.puzzleSeed || randomSeedString(6), tier);
+  // Fall back to a seed string derived from the kit's seeded RNG (not crypto randomness)
+  // so that restart(sameSeed) reproduces the same initial puzzle — real "New Puzzle"
+  // clicks still call randomSeedString() directly and stay unaffected.
+  const seedAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const initSeed = g.puzzleSeed || Array.from({ length: 6 }, () => seedAlphabet[g.rng.int(seedAlphabet.length)]).join('');
+  newPuzzle(s, initSeed, tier);
   s.phase = 'intro';
   return s;
 }

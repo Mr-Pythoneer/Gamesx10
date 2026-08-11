@@ -693,11 +693,25 @@ export function registerSelftest(name, fn) {
     };
     const log = (...a) => logs.push(a.map(String).join(' '));
     const started = performance.now();
+    const snap = {};
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); snap[k] = localStorage.getItem(k); }
     try {
       await fn(check, log);
     } catch (e) {
       checks.push({ name: 'selftest threw', pass: false, detail: (e && (e.stack || e.message) || String(e)).slice(0, 500) });
     }
+    // The game's own rAF loop can still be running and may commit a Store write (e.g. a
+    // win condition reached by scripted input) shortly after fn() returns — wait it out
+    // so the restore below actually catches everything fn()'s run caused. A plain timer
+    // is used instead of requestAnimationFrame because rAF can be suspended entirely in
+    // a hidden/background iframe (as self-tests are typically run in), which would hang
+    // this indefinitely instead of just adding a bounded delay.
+    await new Promise((r) => setTimeout(r, 120));
+    // A self-test must never leave real save data behind, no matter what path fn() took.
+    const keysNow = [];
+    for (let i = 0; i < localStorage.length; i++) keysNow.push(localStorage.key(i));
+    for (const k of keysNow) if (!(k in snap)) localStorage.removeItem(k);
+    for (const k in snap) localStorage.setItem(k, snap[k]);
     const pass = checks.length > 0 && checks.every((c) => c.pass);
     return { name, pass, checks, logs, ms: Math.round(performance.now() - started) };
   };
