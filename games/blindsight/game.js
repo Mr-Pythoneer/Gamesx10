@@ -445,9 +445,17 @@ function update(s, dt, g) {
     drainFx(s, g);
     if (s.endT > 0.35) {
       if (s.mode === 'campaign') {
-        if (g.input.justPressed('space') || g.input.justPressed('enter')) { s.phase = 'select'; return; }
+        // Winning advances maxStage but never moved the picker's cursor off the
+        // stage you just cleared — so "SPACE -> stage select" landed you right back
+        // on the one you already beat, and pressing SPACE again there just replayed
+        // it. That read as "can't advance" even though the next stage WAS unlocked.
+        // Move the cursor onto the newly unlocked stage before opening the picker.
+        if (g.input.justPressed('space') || g.input.justPressed('enter') || g.input.justPressed('n')) {
+          if (s.phase === 'won') s.stageIndex = clamp(s.stageIndex + 1, 0, s.maxStage);
+          s.phase = 'select';
+          return;
+        }
         if (g.input.justPressed('r')) { startStage(s, g, s.stageIndex); return; }
-        if (g.input.justPressed('n')) { s.phase = 'select'; return; }
       } else {
         if (g.input.justPressed('r') || g.input.justPressed('space') || g.input.justPressed('enter')) {
           resetRun(s, g, s.seedStr);
