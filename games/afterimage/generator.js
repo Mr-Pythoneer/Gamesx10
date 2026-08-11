@@ -61,22 +61,47 @@ function tierOf(idx) {
 
 // 5 rows: 0 ceiling, 1 alcove headroom, 2 alcove/plate band, 3 main corridor
 // (walk row), 4 floor.
+// Lays `len` open floor columns with AT MOST one hazard checkpoint in the whole
+// stretch — same spirit as the original single-spike-per-run, just placed at a
+// randomized position instead of always right after the lead-in, and occasionally a
+// 2-tile cluster instead of always one (gauntlet-tier only — the scripted solver's
+// spikeHop hold-through-landing logic is proven to clear a run of 2, so this stays
+// inside its verified envelope). A per-column coin flip instead of one placement roll
+// was tried first and produced 3-4 spikes per stretch on average at gauntlet density —
+// unclearable by the solver's single-hazard state machine, hence "at most one."
+function layFloor(walk, len, chance, allowCluster, rng) {
+  const cluster = allowCluster && len >= 4 && rng() < 0.2;
+  const hazardLen = cluster ? 2 : 1;
+  const hasHazard = len >= hazardLen + 2 && rng() < chance;
+  const at = hasHazard ? 1 + Math.floor(rng() * (len - hazardLen - 1)) : -1;
+  for (let i = 0; i < len; i++) {
+    walk.push(hasHazard && i >= at && i < at + hazardLen ? '^' : '.');
+  }
+}
+
 export function buildGrid(par, idx, rng) {
   const tier = tierOf(idx);
   const walk = []; // row3 chars
   walk.push('#'); walk[0] = 'S'; // will overwrite border below; col0 is border+spawn
 
-  const baseLen = tier === 'intro' ? 12 : tier === 'combo' ? 14 : 16;
-  const spikeChance = tier === 'intro' ? 0.12 : tier === 'combo' ? 0.3 : 0.45;
+  const spikeChance = tier === 'intro' ? 0.10 : tier === 'combo' ? 0.18 : 0.25;
+  const allowCluster = tier === 'gauntlet';
+  // A pacing "beat" per segment, reused for both halves, so a level reads as having a
+  // rhythm (tight-tight-tight, or long-short-long) rather than every segment being the
+  // same length rolled from the same narrow range. This is the main lever against
+  // every level feeling identical — length variety is felt far more than spike count.
+  const BEATS = ['tight', 'long', 'even', 'sprint'];
 
   const alcoveCols = []; // { start, seg }
   const doorCols = []; // column index per segment
 
   for (let seg = 0; seg < par; seg++) {
     const extra = Math.floor(idx / 15);
-    const preLen = 4 + Math.floor(rng() * 4) + extra;
-    for (let i = 0; i < preLen; i++) walk.push('.');
-    if (rng() < spikeChance) walk.push('^'); else walk.push('.');
+    const beat = BEATS[Math.floor(rng() * BEATS.length)];
+    const preBase = beat === 'tight' ? 2 : beat === 'sprint' ? 3 : beat === 'long' ? 7 : 4;
+    const preSpread = beat === 'long' ? 5 : 3;
+    const preLen = preBase + Math.floor(rng() * preSpread) + extra;
+    layFloor(walk, preLen, spikeChance, allowCluster, rng);
     // gap before alcove so the jump has a clean run-up
     const gap2 = 3 + Math.floor(rng() * 3);
     for (let i = 0; i < gap2; i++) walk.push('.');
@@ -85,15 +110,15 @@ export function buildGrid(par, idx, rng) {
     for (let i = 0; i < ALCOVE_W; i++) walk.push('.'); // row3 stays open under alcove
     alcoveCols.push({ start: alcoveStart, seg });
 
-    const postLen = 4 + Math.floor(rng() * 3);
-    for (let i = 0; i < postLen; i++) walk.push('.');
-    if (tier === 'gauntlet' && rng() < spikeChance * 0.6) walk.push('^'); else walk.push('.');
+    const postBase = beat === 'tight' ? 3 : beat === 'long' ? 6 : 4;
+    const postLen = postBase + Math.floor(rng() * 3);
+    layFloor(walk, postLen, tier === 'intro' ? spikeChance * 0.4 : spikeChance * 0.7, allowCluster, rng);
     for (let i = 0; i < 2; i++) walk.push('.');
 
     doorCols.push(walk.length);
     walk.push(DOOR_CH[seg]);
   }
-  const tail = 5 + Math.floor(rng() * 4);
+  const tail = 5 + Math.floor(rng() * 5);
   for (let i = 0; i < tail; i++) walk.push('.');
   walk.push('G');
   walk.push('#');

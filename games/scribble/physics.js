@@ -59,7 +59,14 @@ const BALL_TAN = 0.99;        // tangential retention => it rolls
 const PART_REST = 0.02;
 const PART_TAN = 0.72;        // ink loses sideways energy on contact => it settles
 
-const INK_FLOOR = WORLD_H + 260;
+// A drawn stroke that slips through a gap in a level's own geometry (e.g. over a pit
+// with no bridge under it yet) used to free-fall all the way down to WORLD_H + 260 —
+// 260px below the visible canvas, which cuts off exactly at WORLD_H. It technically
+// still existed there, but invisible and unreachable is indistinguishable from gone:
+// that ink was permanently wasted. This is the real, visible backstop every ink body
+// rests on instead — just inside the bottom edge of the world, so a stroke that falls
+// through always ends up somewhere you can still see and reuse it.
+const INK_FLOOR = WORLD_H - INK_R;
 const BOUND = 4000;
 const EPS = 1e-6;
 

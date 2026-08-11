@@ -44,8 +44,14 @@ export const GAMES = [
   { slug: 'mirrorbind', name: 'Mirrorbind' },
 ];
 
-// XML namespace URIs are identifiers, not network requests.
-const URL_ALLOWLIST = [/^https?:\/\/www\.w3\.org\//];
+// XML namespace URIs are identifiers, not network requests. The GitHub link in the
+// hub's colophon is a plain outbound <a href> — the user clicks it, the page never
+// fetches it — which doesn't touch the "the arcade downloads nothing" guarantee this
+// check exists to enforce, unlike a CDN <script src> or a remote image would.
+const URL_ALLOWLIST = [
+  /^https?:\/\/www\.w3\.org\//,
+  /^https?:\/\/github\.com\/Mr-Pythoneer\/?$/,
+];
 
 const fails = [];
 const warns = [];

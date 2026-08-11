@@ -576,6 +576,14 @@ function drawTiles(s, ctx, level, doorOpen, hair, t) {
   ctx.restore();
 
   const isWall = (rr, cc) => rr >= 0 && rr < level.rows && cc >= 0 && cc < level.cols && level.grid[rr][cc] === '#';
+  // A ledge or plate is itself a standable one-way surface (see sim.js's isOneway) —
+  // stacking one on top of another, or on top of a ledge, is legal level geometry.
+  // The ledge/plate draw code below only ever checked for a literal wall tile
+  // underneath to decide whether to render "sitting on the floor" vs. "hanging from
+  // the top of this tile," so anything resting on a ledge or another plate — not a
+  // wall — drew as if floating in mid-air with nothing visibly holding it up.
+  const chAt = (rr, cc) => (rr >= 0 && rr < level.rows && cc >= 0 && cc < level.cols) ? level.grid[rr][cc] : null;
+  const isSupport = (rr, cc) => { const c2 = chAt(rr, cc); return c2 === '#' || c2 === '_' || (c2 >= '1' && c2 <= '4'); };
 
   for (let r = 0; r < level.rows; r++) {
     for (let c = 0; c < level.cols; c++) {
@@ -618,7 +626,7 @@ function drawTiles(s, ctx, level, doorOpen, hair, t) {
         // floor-mounted one is walked over — so the plate sits on whichever edge the
         // player actually meets. Drawing both the same way is what made bodies look
         // like they were hovering a tile above the thing they stand on.
-        const topY = isWall(r + 1, c) ? by + TILE - 4 : by;
+        const topY = isSupport(r + 1, c) ? by + TILE - 4 : by;
         ctx.fillStyle = C_LEDGE;
         ctx.fillRect(bx, topY, TILE, 3);
         ctx.fillStyle = LIT_16;
@@ -632,7 +640,7 @@ function drawTiles(s, ctx, level, doorOpen, hair, t) {
         const id = ch.charCodeAt(0) - 48;
         const active = !!doorOpen[id];
         const drop = active ? 1.3 : 0;
-        const grounded = isWall(r + 1, c);
+        const grounded = isSupport(r + 1, c);
         const capY = (grounded ? by + TILE - 3.4 : by) + drop;
         const houseY = grounded ? by + TILE - 5.4 : by + 1.4;
         ctx.fillStyle = SHADE_45;
