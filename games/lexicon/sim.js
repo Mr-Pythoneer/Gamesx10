@@ -188,7 +188,7 @@ export function addTile(sim, letter, x, y) {
 }
 
 function spawnInterval(sim) {
-  return clamp(1.5 - sim.t * 0.010, 0.42, 1.5) * sim.spawnScale;
+  return clamp(1.6 - sim.t * 0.007, 0.55, 1.6) * sim.spawnScale;
 }
 
 /** Drop into whichever of two sampled columns is currently lower. */
@@ -246,7 +246,7 @@ export function makeSim(seed = 1, opts = {}) {
     events: [],
     impulses: new Map(),   // warm-start cache, keyed by contact
     // campaign tuning — clamped so no combination can make the pile unsolvable
-    vowelFloor: opts.vowelFloor === undefined ? 0.30 : clamp(opts.vowelFloor, 0.20, 0.30),
+    vowelFloor: opts.vowelFloor === undefined ? 0.30 : clamp(opts.vowelFloor, 0.20, 0.32),
     vowelCeil: opts.vowelCeil === undefined ? 0.55 : clamp(opts.vowelCeil, 0.55, 0.65),
     rareCap: opts.rareCap === undefined ? 2 : clamp(opts.rareCap, 2, 3),
     dangerY: opts.dangerY === undefined ? DANGER_Y : clamp(opts.dangerY, DANGER_Y, DANGER_Y + 60),
@@ -693,7 +693,7 @@ export function stepSim(sim, intent, dt) {
       if ((t.asleep || t.still > 8) && t.y - t.r < sim.dangerY) { bad = true; break; }
     }
     sim.overflowT = bad ? sim.overflowT + dt : Math.max(0, sim.overflowT - dt * 1.5);
-    if (sim.overflowT > 0.9) {
+    if (sim.overflowT > 1.5) {
       sim.over = true;
       sim.sel = [];
       sim.events.push({ type: 'over', score: sim.score });

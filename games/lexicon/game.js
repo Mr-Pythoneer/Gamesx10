@@ -227,6 +227,11 @@ const lerp = (a, b, t) => a + (b - a) * t;
  * The exact formula is mirrored (and load-bearing-verified against the real sim
  * + real dictionary) by the throwaway script described in this game's PR notes.
  */
+// Softened per player feedback (the original curve was too punishing): slower target
+// growth, a higher spawnScale floor (tiles never fall as relentlessly fast), a higher
+// vowelFloor band (piles stay easier to find words in), and the dangerY squeeze in the
+// back stretch pushed later and shrunk — see the self-test bounds below for the exact
+// clamps this must stay inside.
 export const STAGES = (() => {
   const out = [];
   for (let i = 0; i < STAGE_COUNT; i++) {
@@ -235,12 +240,12 @@ export const STAGES = (() => {
       index: i,
       name: 'Stage ' + (i + 1),
       nameZh: '关卡 ' + (i + 1),
-      target: Math.round(150 + 70 * i + Math.floor(i / 5) * 40),
-      spawnScale: lerp(1.35, 0.45, t),
-      vowelFloor: lerp(0.30, 0.20, t),
+      target: Math.round(130 + 50 * i + Math.floor(i / 5) * 25),
+      spawnScale: lerp(1.6, 0.7, t),
+      vowelFloor: lerp(0.32, 0.24, t),
       vowelCeil: 0.55,
       rareCap: i < 30 ? 2 : 3,
-      dangerY: i < 40 ? DANGER_Y : Math.round(lerp(DANGER_Y, DANGER_Y + 40, (i - 40) / 9)),
+      dangerY: i < 44 ? DANGER_Y : Math.round(lerp(DANGER_Y, DANGER_Y + 25, (i - 44) / 5)),
     });
   }
   return out;
@@ -1163,7 +1168,7 @@ function render(s, ctx, g) {
   const v = s.view;
   const sim = s.sim;
   const tt = s.t;
-  const dg = clamp(sim.overflowT / 0.9, 0, 1);
+  const dg = clamp(sim.overflowT / 1.5, 0, 1);
   const heat = clamp(Math.max(s.prox * 0.92, dg), 0, 1);
 
   // backdrop
@@ -1518,11 +1523,11 @@ registerSelftest('lexicon', (check, log) => {
     STAGES.map((st) => st.target).join(','));
   check('spawnScale never increases (tiles only speed up)',
     STAGES.every((st, i) => i === 0 || st.spawnScale <= STAGES[i - 1].spawnScale + 1e-9));
-  check('vowelFloor stays in the clamped, playable band [0.20, 0.30]',
-    STAGES.every((st) => st.vowelFloor >= 0.20 && st.vowelFloor <= 0.30),
+  check('vowelFloor stays in the clamped, playable band [0.20, 0.32]',
+    STAGES.every((st) => st.vowelFloor >= 0.20 && st.vowelFloor <= 0.32),
     STAGES.map((st) => st.vowelFloor.toFixed(2)).join(','));
-  check('dangerY only rises (playfield only shrinks) in the last 10 stages',
-    STAGES.every((st, i) => (i < 40 ? st.dangerY === DANGER_Y : st.dangerY >= DANGER_Y) && st.dangerY <= DANGER_Y + 60),
+  check('dangerY only rises (playfield only shrinks) in the last 6 stages',
+    STAGES.every((st, i) => (i < 44 ? st.dangerY === DANGER_Y : st.dangerY >= DANGER_Y) && st.dangerY <= DANGER_Y + 60),
     STAGES.map((st) => st.dangerY).join(','));
 
   // stage init wires the sim's tuning knobs through
